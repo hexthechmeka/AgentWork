@@ -26,7 +26,6 @@ import {
   DEFAULT_EFFORT_LEVEL,
   type EffortLevel,
 } from "@/lib/ai/models";
-import type { Vote } from "@/lib/db/schema";
 import { ChatbotError } from "@/lib/errors";
 import type { ChatMessage } from "@/lib/types";
 import { fetcher, fetchWithErrorHandlers, generateUUID } from "@/lib/utils";
@@ -39,19 +38,15 @@ type ActiveChatContextValue = {
   status: UseChatHelpers<ChatMessage>["status"];
   stop: UseChatHelpers<ChatMessage>["stop"];
   regenerate: UseChatHelpers<ChatMessage>["regenerate"];
-  addToolApprovalResponse: UseChatHelpers<ChatMessage>["addToolApprovalResponse"];
   input: string;
   setInput: Dispatch<SetStateAction<string>>;
   visibilityType: VisibilityType;
   isReadonly: boolean;
   isLoading: boolean;
-  votes: Vote[] | undefined;
   currentModelId: string;
   setCurrentModelId: (id: string) => void;
   currentEffort: EffortLevel;
   setCurrentEffort: (effort: EffortLevel) => void;
-  showCreditCardAlert: boolean;
-  setShowCreditCardAlert: Dispatch<SetStateAction<boolean>>;
   isProjectView: boolean;
   projectId: string | null;
 };
@@ -110,7 +105,6 @@ export function ActiveChatProvider({
   }, [projectIdFromUrl]);
 
   const [input, setInput] = useState("");
-  const [showCreditCardAlert, setShowCreditCardAlert] = useState(false);
 
   const { data: chatData, isLoading } = useSWR(
     isNewChat
@@ -135,7 +129,6 @@ export function ActiveChatProvider({
     stop,
     regenerate,
     resumeStream,
-    addToolApprovalResponse,
   } = useChat<ChatMessage>({
     generateId: generateUUID,
     id: chatId,
@@ -148,9 +141,7 @@ export function ActiveChatProvider({
       setDataStream((ds) => (ds ? [...ds, dataPart] : []));
     },
     onError: (error) => {
-      if (error.message?.includes("AI Gateway requires a valid credit card")) {
-        setShowCreditCardAlert(true);
-      } else if (error instanceof ChatbotError) {
+      if (error instanceof ChatbotError) {
         toast({ description: error.message, type: "error" });
       } else {
         toast({
@@ -278,17 +269,8 @@ export function ActiveChatProvider({
 
   const isReadonly = isNewChat ? false : (chatData?.isReadonly ?? false);
 
-  const { data: votes } = useSWR<Vote[]>(
-    !isReadonly && messages.length >= 2
-      ? `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/vote?chatId=${chatId}`
-      : null,
-    fetcher,
-    { revalidateOnFocus: false }
-  );
-
   const value = useMemo<ActiveChatContextValue>(
     () => ({
-      addToolApprovalResponse,
       chatId,
       currentEffort,
       currentModelId,
@@ -304,12 +286,9 @@ export function ActiveChatProvider({
       setCurrentModelId,
       setInput,
       setMessages,
-      setShowCreditCardAlert,
-      showCreditCardAlert,
       status,
       stop,
       visibilityType: visibility,
-      votes,
     }),
     [
       chatId,
@@ -319,16 +298,13 @@ export function ActiveChatProvider({
       status,
       stop,
       regenerate,
-      addToolApprovalResponse,
       input,
       visibility,
       isReadonly,
       isNewChat,
       isLoading,
-      votes,
       currentModelId,
       currentEffort,
-      showCreditCardAlert,
       isProjectView,
       projectIdFromUrl,
     ]

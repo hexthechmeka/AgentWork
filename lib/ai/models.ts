@@ -31,7 +31,6 @@ export type ChatModel = {
   name: string;
   provider: string;
   description: string;
-  gatewayOrder?: string[];
   reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high";
 };
 

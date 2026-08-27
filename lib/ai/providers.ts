@@ -1,6 +1,6 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { customProvider, gateway } from "ai";
+import { customProvider } from "ai";
 import { isTestEnvironment } from "../constants";
 import { titleModel } from "./models";
 
@@ -38,7 +38,7 @@ function resolveDirectModel(modelId: string) {
     return glm(modelId.slice("glm/".length));
   }
 
-  return null;
+  throw new Error(`Unsupported model id: ${modelId}`);
 }
 
 export function getLanguageModel(modelId: string) {
@@ -46,12 +46,7 @@ export function getLanguageModel(modelId: string) {
     return myProvider.languageModel(modelId);
   }
 
-  const directModel = resolveDirectModel(modelId);
-  if (directModel) {
-    return directModel;
-  }
-
-  return gateway.languageModel(modelId);
+  return resolveDirectModel(modelId);
 }
 
 export function getTitleModel() {
@@ -59,10 +54,5 @@ export function getTitleModel() {
     return myProvider.languageModel("title-model");
   }
 
-  const directModel = resolveDirectModel(titleModel.id);
-  if (directModel) {
-    return directModel;
-  }
-
-  return gateway.languageModel(titleModel.id);
+  return resolveDirectModel(titleModel.id);
 }

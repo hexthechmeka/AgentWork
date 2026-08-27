@@ -13,17 +13,14 @@ export type Surface =
   | "stream"
   | "database"
   | "history"
-  | "vote"
   | "document"
-  | "suggestions"
-  | "activate_gateway";
+  | "suggestions";
 
 export type ErrorCode = `${ErrorType}:${Surface}`;
 
 export type ErrorVisibility = "response" | "log" | "none";
 
 export const visibilityBySurface: Record<Surface, ErrorVisibility> = {
-  activate_gateway: "response",
   api: "response",
   auth: "response",
   chat: "response",
@@ -32,7 +29,6 @@ export const visibilityBySurface: Record<Surface, ErrorVisibility> = {
   history: "response",
   stream: "response",
   suggestions: "response",
-  vote: "response",
 };
 
 export class ChatbotError extends Error {
@@ -90,9 +86,6 @@ export function getMessageByErrorCode(errorCode: ErrorCode): string {
   switch (errorCode) {
     case "bad_request:api":
       return "요청을 처리할 수 없습니다. 입력값을 확인하고 다시 시도해주세요.";
-
-    case "bad_request:activate_gateway":
-      return "AI Gateway를 사용하려면 유효한 신용카드 등록이 필요합니다. https://vercel.com/d?to=%2F%5Bteam%5D%2F%7E%2Fai%3Fmodal%3Dadd-credit-card 에서 카드를 등록하고 무료 크레딧을 받아보세요.";
 
     case "unauthorized:auth":
       return "계속하려면 로그인이 필요합니다.";

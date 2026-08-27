@@ -2,7 +2,6 @@ import type { UseChatHelpers } from "@ai-sdk/react";
 import { ArrowDownIcon } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 import { useMessages } from "@/hooks/use-messages";
-import type { Vote } from "@/lib/db/schema";
 import type { ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useDataStream } from "./data-stream-provider";
@@ -10,10 +9,8 @@ import { Greeting } from "./greeting";
 import { PreviewMessage, ThinkingMessage } from "./message";
 
 type MessagesProps = {
-  addToolApprovalResponse: UseChatHelpers<ChatMessage>["addToolApprovalResponse"];
   chatId: string;
   status: UseChatHelpers<ChatMessage>["status"];
-  votes: Vote[] | undefined;
   messages: ChatMessage[];
   setMessages: UseChatHelpers<ChatMessage>["setMessages"];
   regenerate: UseChatHelpers<ChatMessage>["regenerate"];
@@ -25,10 +22,8 @@ type MessagesProps = {
 };
 
 function PureMessages({
-  addToolApprovalResponse,
   chatId,
   status,
-  votes,
   messages,
   setMessages,
   regenerate,
@@ -81,8 +76,6 @@ function PureMessages({
         <div className="mx-auto flex min-h-full min-w-0 max-w-4xl flex-col gap-5 px-2 py-6 md:gap-7 md:px-4">
           {messages.map((message, index) => (
             <PreviewMessage
-              addToolApprovalResponse={addToolApprovalResponse}
-              chatId={chatId}
               isLoading={
                 status === "streaming" && messages.length - 1 === index
               }
@@ -95,11 +88,6 @@ function PureMessages({
                 hasSentMessage && index === messages.length - 1
               }
               setMessages={setMessages}
-              vote={
-                votes
-                  ? votes.find((vote) => vote.messageId === message.id)
-                  : undefined
-              }
             />
           ))}
 
