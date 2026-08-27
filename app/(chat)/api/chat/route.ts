@@ -19,7 +19,11 @@ import {
   getCapabilities,
   getModelAvailability,
 } from "@/lib/ai/models";
-import { type RequestHints, systemPrompt } from "@/lib/ai/prompts";
+import {
+  type RequestHints,
+  systemPrompt,
+  type UnifiedChatIdentity,
+} from "@/lib/ai/prompts";
 import { getLanguageModel } from "@/lib/ai/providers";
 import { createDocument } from "@/lib/ai/tools/create-document";
 import { editDocument } from "@/lib/ai/tools/edit-document";
@@ -56,6 +60,26 @@ function isModelStreamActivity(chunk: { type: string }) {
   );
 }
 
+function tagAssistantMessagesForUnifiedChat(
+  messages: ChatMessage[]
+): ChatMessage[] {
+  return messages.map((msg) => {
+    const modelId = msg.metadata?.modelId;
+    if (msg.role !== "assistant" || !modelId) {
+      return msg;
+    }
+    const label = modelId.startsWith("glm/") ? "GLM" : "Claude";
+    return {
+      ...msg,
+      parts: msg.parts.map((part) =>
+        part.type === "text"
+          ? { ...part, text: `[${label}] ${part.text}` }
+          : part
+      ),
+    };
+  });
+}
+
 function getStreamContext() {
   try {
     return createResumableStreamContext({ waitUntil: after });
@@ -78,6 +102,7 @@ export async function POST(request: Request) {
 
   try {
     const {
+      chatKind,
       effort,
       id,
       message,
@@ -136,6 +161,7 @@ export async function POST(request: Request) {
 
       await saveChat({
         id,
+        kind: chatKind ?? "planning",
         projectId: validatedProjectId,
         title: "New chat",
         userId: session.user.id,
@@ -199,6 +225,7 @@ export async function POST(request: Request) {
             chatId: id,
             createdAt: new Date(),
             id: message.id,
+            modelId: null,
             parts: message.parts,
             role: "user",
           },
@@ -212,7 +239,19 @@ export async function POST(request: Request) {
     const isReasoningModel = capabilities?.reasoning === true;
     const supportsTools = capabilities?.tools === true;
 
-    const modelMessages = await convertToModelMessages(uiMessages);
+    const effectiveChatKind = chat?.kind ?? chatKind ?? "planning";
+    const currentProvider = chatModel.startsWith("glm/") ? "GLM" : "Claude";
+    const identity: UnifiedChatIdentity | undefined =
+      effectiveChatKind === "unified"
+        ? {
+            other: currentProvider === "Claude" ? "GLM" : "Claude",
+            self: currentProvider,
+          }
+        : undefined;
+
+    const modelMessages = await convertToModelMessages(
+      identity ? tagAssistantMessagesForUnifiedChat(uiMessages) : uiMessages
+    );
 
     const stream = createUIMessageStream({
       execute: async ({ writer: dataStream }) => {
@@ -288,7 +327,7 @@ export async function POST(request: Request) {
                   "updateDocument",
                   "requestSuggestions",
                 ],
-          instructions: systemPrompt({ requestHints, supportsTools }),
+          instructions: systemPrompt({ identity, requestHints, supportsTools }),
           messages: modelMessages,
           model: getLanguageModel(chatModel),
           onAbort() {
@@ -345,6 +384,7 @@ export async function POST(request: Request) {
 
         dataStream.merge(
           toUIMessageStream({
+            messageMetadata: () => ({ modelId: chatModel }),
             sendReasoning: isReasoningModel,
             stream: result.stream,
           })
@@ -383,6 +423,8 @@ export async function POST(request: Request) {
                     chatId: id,
                     createdAt: new Date(),
                     id: finishedMsg.id,
+                    modelId:
+                      finishedMsg.role === "assistant" ? chatModel : null,
                     parts: finishedMsg.parts,
                     role: finishedMsg.role,
                   },
@@ -397,6 +439,7 @@ export async function POST(request: Request) {
               chatId: id,
               createdAt: new Date(),
               id: currentMessage.id,
+              modelId: currentMessage.role === "assistant" ? chatModel : null,
               parts: currentMessage.parts,
               role: currentMessage.role,
             })),

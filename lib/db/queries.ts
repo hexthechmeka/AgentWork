@@ -78,17 +78,20 @@ export async function saveChat({
   projectId,
   title,
   visibility,
+  kind = "planning",
 }: {
   id: string;
   userId: string;
   projectId: string | null;
   title: string;
   visibility: VisibilityType;
+  kind?: "planning" | "unified";
 }) {
   try {
     return await db.insert(chat).values({
       createdAt: new Date(),
       id,
+      kind,
       projectId,
       title,
       userId,

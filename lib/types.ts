@@ -7,7 +7,8 @@ import type { updateDocument } from "./ai/tools/update-document";
 import type { Suggestion } from "./db/schema";
 
 export const messageMetadataSchema = z.object({
-  createdAt: z.string(),
+  createdAt: z.string().optional(),
+  modelId: z.string().optional(),
 });
 
 export type MessageMetadata = z.infer<typeof messageMetadataSchema>;

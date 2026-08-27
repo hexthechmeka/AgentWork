@@ -1,7 +1,8 @@
 "use client";
 
-import { SendIcon, SparklesIcon } from "lucide-react";
+import { SendIcon } from "lucide-react";
 import { useCallback, useState } from "react";
+import { ModelAvatar } from "@/components/chat/model-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -44,7 +45,7 @@ export function GlmPanel() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex h-14 shrink-0 items-center gap-2 border-border/40 border-b px-4">
-        <SparklesIcon className="size-4 text-sidebar-foreground/60" />
+        <ModelAvatar className="size-6 text-[11px]" provider="glm" />
         <span className="font-medium text-sm">GLM</span>
       </header>
 
@@ -61,8 +62,13 @@ export function GlmPanel() {
               className="rounded-lg border border-sidebar-border bg-background/40 px-3 py-2 text-[13px]"
               key={comment.id}
             >
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-sidebar-foreground/40">
-                {comment.role === "user" ? "You" : "GLM"}
+              <div className="mb-1.5 flex items-center gap-1.5">
+                {comment.role === "glm" && (
+                  <ModelAvatar className="size-4 text-[9px]" provider="glm" />
+                )}
+                <span className="font-semibold text-[10px] text-sidebar-foreground/40 uppercase tracking-wide">
+                  {comment.role === "user" ? "You" : "GLM"}
+                </span>
               </div>
               <div className="whitespace-pre-wrap text-sidebar-foreground/90">
                 {comment.text}

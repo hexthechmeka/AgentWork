@@ -27,6 +27,7 @@ const toolApprovalMessageSchema = z.object({
 });
 
 export const postRequestBodySchema = z.object({
+  chatKind: z.enum(["planning", "unified"]).optional(),
   effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
   id: z.uuid(),
   message: userMessageSchema.optional(),

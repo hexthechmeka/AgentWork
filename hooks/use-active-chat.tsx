@@ -62,10 +62,12 @@ export function ActiveChatProvider({
   children,
   chatIdOverride,
   projectIdOverride,
+  chatKindOverride = "planning",
 }: {
   children: ReactNode;
   chatIdOverride?: string;
   projectIdOverride?: string;
+  chatKindOverride?: "planning" | "unified";
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -183,6 +185,7 @@ export function ActiveChatProvider({
 
         return {
           body: {
+            chatKind: chatKindOverride,
             id: request.id,
             ...(isToolApprovalContinuation
               ? { messages: request.messages }

@@ -63,20 +63,30 @@ About the origin of user's request:
 - country: ${requestHints.country}
 `;
 
+export type UnifiedChatIdentity = {
+  self: "Claude" | "GLM";
+  other: "Claude" | "GLM";
+};
+
 export const systemPrompt = ({
   requestHints,
   supportsTools,
+  identity,
 }: {
   requestHints: RequestHints;
   supportsTools: boolean;
+  identity?: UnifiedChatIdentity;
 }) => {
   const requestPrompt = getRequestPromptFromHints(requestHints);
+  const identityPrompt = identity
+    ? `\n\n너는 ${identity.self}야. 이 대화엔 다른 AI(${identity.other})도 같이 참여하고 있고, 히스토리의 [${identity.other}] 태그가 상대방 발언이야.`
+    : "";
 
   if (!supportsTools) {
-    return `${regularPrompt}\n\n${requestPrompt}`;
+    return `${regularPrompt}${identityPrompt}\n\n${requestPrompt}`;
   }
 
-  return `${regularPrompt}\n\n${requestPrompt}\n\n${artifactsPrompt}`;
+  return `${regularPrompt}${identityPrompt}\n\n${requestPrompt}\n\n${artifactsPrompt}`;
 };
 
 export const codePrompt = `

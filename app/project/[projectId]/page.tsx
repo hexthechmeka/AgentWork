@@ -27,16 +27,19 @@ export default async function ProjectPage({
     notFound();
   }
 
+  const planningChats = project.chats.filter((c) => c.kind !== "unified");
   const requestedChat = chatIdParam
-    ? project.chats.find((c) => c.id === chatIdParam)
+    ? planningChats.find((c) => c.id === chatIdParam)
     : undefined;
-  const existingChatId = requestedChat?.id ?? project.chats.at(0)?.id;
+  const existingChatId = requestedChat?.id ?? planningChats.at(0)?.id;
+  const unifiedChatId = project.chats.find((c) => c.kind === "unified")?.id;
 
   return (
     <ProjectView
       existingChatId={existingChatId}
       projectId={project.id}
       projectName={project.name}
+      unifiedChatId={unifiedChatId}
     />
   );
 }

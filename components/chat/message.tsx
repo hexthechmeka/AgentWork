@@ -17,6 +17,11 @@ import { DocumentPreview } from "./document-preview";
 import { SparklesIcon } from "./icons";
 import { MessageActions } from "./message-actions";
 import { MessageReasoning } from "./message-reasoning";
+import {
+  ModelAvatar,
+  ModelNameLabel,
+  providerFromModelId,
+} from "./model-badge";
 import { PreviewAttachment } from "./preview-attachment";
 
 function WaitingText() {
@@ -61,6 +66,7 @@ const PurePreviewMessage = ({
 
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
+  const provider = providerFromModelId(message.metadata?.modelId);
 
   const hasAnyContent = message.parts?.some(
     (part) =>
@@ -258,13 +264,14 @@ const PurePreviewMessage = ({
       >
         {isAssistant && (
           <div className="flex h-[calc(13px*1.65)] shrink-0 items-center">
-            <div className="flex size-7 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground ring-1 ring-border/50">
-              <SparklesIcon size={13} />
-            </div>
+            <ModelAvatar provider={provider} />
           </div>
         )}
         {isAssistant ? (
-          <div className="flex min-w-0 flex-1 flex-col gap-2">{content}</div>
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <ModelNameLabel provider={provider} />
+            <div className="flex flex-col gap-2">{content}</div>
+          </div>
         ) : (
           content
         )}

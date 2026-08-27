@@ -39,6 +39,9 @@ export type Project = InferSelectModel<typeof project>;
 export const chat = pgTable("Chat", {
   createdAt: timestamp("createdAt").notNull(),
   id: uuid("id").primaryKey().notNull().defaultRandom(),
+  kind: varchar("kind", { enum: ["planning", "unified"] })
+    .notNull()
+    .default("planning"),
   projectId: uuid("projectId").references(() => project.id),
   title: text("title").notNull(),
   userId: uuid("userId")
@@ -58,6 +61,7 @@ export const message = pgTable("Message_v2", {
     .references(() => chat.id),
   createdAt: timestamp("createdAt").notNull(),
   id: uuid("id").primaryKey().notNull().defaultRandom(),
+  modelId: text("modelId"),
   parts: json("parts").notNull(),
   role: varchar("role").notNull(),
 });
