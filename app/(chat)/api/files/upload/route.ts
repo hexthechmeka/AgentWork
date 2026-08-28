@@ -57,21 +57,10 @@ export async function POST(request: Request) {
     const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
     const fileBuffer = await file.arrayBuffer();
 
-    console.log(
-      "Upload route: BLOB_READ_WRITE_TOKEN present?",
-      Boolean(process.env.BLOB_READ_WRITE_TOKEN),
-      "length:",
-      process.env.BLOB_READ_WRITE_TOKEN?.length ?? 0,
-      "VERCEL_ENV:",
-      process.env.VERCEL_ENV,
-      "region:",
-      process.env.VERCEL_REGION
-    );
-
     try {
       const data = await put(`${safeName}`, fileBuffer, {
         access: "public",
-        token: process.env.BLOB_READ_WRITE_TOKEN,
+        token: process.env.Agentie_READ_WRITE_TOKEN,
       });
 
       return NextResponse.json(data);
