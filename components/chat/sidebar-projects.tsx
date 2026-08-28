@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronRightIcon, FolderIcon, PlusIcon } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { User } from "next-auth";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -209,9 +209,10 @@ export function SidebarProjects({ user }: { user: User | undefined }) {
   const { setOpenMobile } = useSidebar();
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const activeChatId = pathname?.startsWith("/chat/")
     ? pathname.split("/")[2]
-    : null;
+    : (pathname?.startsWith("/project/") && searchParams.get("chat")) || null;
 
   const { data, isLoading, mutate } = useSWR<ProjectsApiResponse>(
     user ? getProjectsKey() : null,
@@ -256,7 +257,7 @@ export function SidebarProjects({ user }: { user: User | undefined }) {
   const handleNewChatInProject = useCallback(
     (projectId: string) => {
       setOpenMobile(false);
-      router.push(`/?projectId=${projectId}`);
+      router.push(`/project/${projectId}?chat=new`);
     },
     [router, setOpenMobile]
   );
@@ -274,7 +275,8 @@ export function SidebarProjects({ user }: { user: User | undefined }) {
 
     setShowDeleteDialog(false);
 
-    const isCurrentChat = pathname === `/chat/${chatId}`;
+    const isCurrentChat =
+      pathname === `/chat/${chatId}` || chatId === activeChatId;
 
     if (isCurrentChat) {
       router.replace("/");
@@ -300,7 +302,7 @@ export function SidebarProjects({ user }: { user: User | undefined }) {
     });
 
     toast.success("대화가 삭제되었습니다");
-  }, [deleteId, mutate, pathname, router]);
+  }, [deleteId, mutate, pathname, router, activeChatId]);
 
   const handleMoveToProject = useCallback(
     (chatId: string, projectId: string) => {

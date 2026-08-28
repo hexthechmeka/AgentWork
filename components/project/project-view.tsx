@@ -1,8 +1,8 @@
 "use client";
 
-import { ChevronsRightIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { ImperativePanelGroupHandle } from "react-resizable-panels";
+import { CalendarIcon } from "lucide-react";
+import { useCallback, useState } from "react";
+import { ModelAvatar } from "@/components/chat/model-badge";
 import { ChatShell } from "@/components/chat/shell";
 import {
   ResizableHandle,
@@ -15,8 +15,8 @@ import { GlmPanel } from "./glm-panel";
 import { MeetingDocumentPanel } from "./meeting-document-panel";
 import { UnifiedChatPanel } from "./unified-chat-panel";
 
-const EXPANDED_LAYOUT = [30, 40, 30];
-const COLLAPSED_LAYOUT = [50, 0, 50];
+const MEETING_PANEL_SIZE = 40;
+const GLM_PANEL_SIZE = 30;
 
 type ProjectTab = "workspace" | "unified";
 
@@ -45,6 +45,35 @@ function TabButton({
   );
 }
 
+function AccordionTab({
+  isOpen,
+  onClick,
+  icon,
+  label,
+}: {
+  isOpen: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      aria-expanded={isOpen}
+      className={cn(
+        "flex items-center gap-1.5 rounded-md px-2.5 py-1 font-medium text-[12px] transition-colors",
+        isOpen
+          ? "bg-muted text-foreground"
+          : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+      )}
+      onClick={onClick}
+      type="button"
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
 export function ProjectView({
   projectId,
   projectName,
@@ -57,17 +86,15 @@ export function ProjectView({
   unifiedChatId?: string;
 }) {
   const [activeTab, setActiveTab] = useState<ProjectTab>("workspace");
-  const [isMeetingPanelCollapsed, setIsMeetingPanelCollapsed] = useState(true);
-  const panelGroupRef = useRef<ImperativePanelGroupHandle>(null);
+  const [isMeetingOpen, setIsMeetingOpen] = useState(false);
+  const [isGlmOpen, setIsGlmOpen] = useState(false);
 
-  useEffect(() => {
-    panelGroupRef.current?.setLayout(
-      isMeetingPanelCollapsed ? COLLAPSED_LAYOUT : EXPANDED_LAYOUT
-    );
-  }, [isMeetingPanelCollapsed]);
+  const toggleMeeting = useCallback(() => {
+    setIsMeetingOpen((prev) => !prev);
+  }, []);
 
-  const toggleMeetingPanel = useCallback(() => {
-    setIsMeetingPanelCollapsed((prev) => !prev);
+  const toggleGlm = useCallback(() => {
+    setIsGlmOpen((prev) => !prev);
   }, []);
 
   const handleWorkspaceTabClick = useCallback(() => {
@@ -78,13 +105,10 @@ export function ProjectView({
     setActiveTab("unified");
   }, []);
 
-  const handleMeetingPanelCollapse = useCallback(() => {
-    setIsMeetingPanelCollapsed(true);
-  }, []);
-
-  const handleMeetingPanelExpand = useCallback(() => {
-    setIsMeetingPanelCollapsed(false);
-  }, []);
+  const leftPanelSize =
+    100 -
+    (isMeetingOpen ? MEETING_PANEL_SIZE : 0) -
+    (isGlmOpen ? GLM_PANEL_SIZE : 0);
 
   return (
     <div className="flex h-dvh w-full flex-col">
@@ -106,67 +130,73 @@ export function ProjectView({
       <div className="min-h-0 flex-1">
         <div
           className={cn(
-            "relative h-full w-full",
+            "flex h-full w-full flex-col",
             activeTab !== "workspace" && "hidden"
           )}
         >
-          <ResizablePanelGroup
-            className="h-full w-full"
-            direction="horizontal"
-            ref={panelGroupRef}
-          >
-            <ResizablePanel
-              className="flex min-w-0 flex-col bg-sidebar"
-              defaultSize={COLLAPSED_LAYOUT[0]}
-              minSize={20}
+          <div className="flex h-9 shrink-0 items-center gap-1 border-border/40 border-b bg-background px-2">
+            <AccordionTab
+              icon={<CalendarIcon className="size-3.5" />}
+              isOpen={isMeetingOpen}
+              label="미팅 문서"
+              onClick={toggleMeeting}
+            />
+            <AccordionTab
+              icon={
+                <ModelAvatar className="size-4 text-[9px]" provider="glm" />
+              }
+              isOpen={isGlmOpen}
+              label="GLM"
+              onClick={toggleGlm}
+            />
+          </div>
+
+          <div className="min-h-0 flex-1">
+            <ResizablePanelGroup
+              className="h-full w-full"
+              direction="horizontal"
+              key={`${isMeetingOpen}-${isGlmOpen}`}
             >
-              <ActiveChatProvider
-                chatIdOverride={existingChatId}
-                projectIdOverride={projectId}
+              <ResizablePanel
+                className="flex min-w-0 flex-col bg-sidebar"
+                defaultSize={leftPanelSize}
+                minSize={20}
               >
-                <ChatShell />
-              </ActiveChatProvider>
-            </ResizablePanel>
+                <ActiveChatProvider
+                  chatIdOverride={existingChatId}
+                  projectIdOverride={projectId}
+                >
+                  <ChatShell />
+                </ActiveChatProvider>
+              </ResizablePanel>
 
-            <ResizableHandle withHandle />
+              {isMeetingOpen ? (
+                <>
+                  <ResizableHandle withHandle />
+                  <ResizablePanel
+                    className="flex min-w-0 flex-col bg-background"
+                    defaultSize={MEETING_PANEL_SIZE}
+                    minSize={25}
+                  >
+                    <MeetingDocumentPanel projectName={projectName} />
+                  </ResizablePanel>
+                </>
+              ) : null}
 
-            <ResizablePanel
-              className="flex min-w-0 flex-col bg-background"
-              collapsedSize={COLLAPSED_LAYOUT[1]}
-              collapsible
-              defaultSize={COLLAPSED_LAYOUT[1]}
-              minSize={25}
-              onCollapse={handleMeetingPanelCollapse}
-              onExpand={handleMeetingPanelExpand}
-            >
-              <MeetingDocumentPanel
-                isCollapsed={isMeetingPanelCollapsed}
-                onToggleCollapse={toggleMeetingPanel}
-                projectName={projectName}
-              />
-            </ResizablePanel>
-
-            <ResizableHandle withHandle />
-
-            <ResizablePanel
-              className="flex min-w-0 flex-col bg-sidebar"
-              defaultSize={COLLAPSED_LAYOUT[2]}
-              minSize={20}
-            >
-              <GlmPanel />
-            </ResizablePanel>
-          </ResizablePanelGroup>
-
-          {isMeetingPanelCollapsed ? (
-            <button
-              aria-label="미팅 문서 펼치기"
-              className="-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 z-20 flex size-7 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-md hover:text-foreground"
-              onClick={toggleMeetingPanel}
-              type="button"
-            >
-              <ChevronsRightIcon className="size-3.5" />
-            </button>
-          ) : null}
+              {isGlmOpen ? (
+                <>
+                  <ResizableHandle withHandle />
+                  <ResizablePanel
+                    className="flex min-w-0 flex-col bg-sidebar"
+                    defaultSize={GLM_PANEL_SIZE}
+                    minSize={20}
+                  >
+                    <GlmPanel />
+                  </ResizablePanel>
+                </>
+              ) : null}
+            </ResizablePanelGroup>
+          </div>
         </div>
 
         <div

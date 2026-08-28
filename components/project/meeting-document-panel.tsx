@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarIcon, PanelRightCloseIcon } from "lucide-react";
+import { CalendarIcon } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -14,15 +14,7 @@ const PLACEHOLDER_DOC = `# 구현계획서
 이 문서의 초안이 여기에 채워질 예정입니다 (다음 단계에서 구현).
 `;
 
-export function MeetingDocumentPanel({
-  projectName,
-  isCollapsed,
-  onToggleCollapse,
-}: {
-  projectName: string;
-  isCollapsed?: boolean;
-  onToggleCollapse?: () => void;
-}) {
+export function MeetingDocumentPanel({ projectName }: { projectName: string }) {
   const [content, setContent] = useState(PLACEHOLDER_DOC);
 
   const handleStartMeeting = useCallback(() => {
@@ -36,10 +28,6 @@ export function MeetingDocumentPanel({
     []
   );
 
-  if (isCollapsed) {
-    return null;
-  }
-
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-border/40 border-b px-4">
@@ -49,22 +37,10 @@ export function MeetingDocumentPanel({
             {projectName}
           </span>
         </div>
-        <div className="flex items-center gap-1">
-          <Button onClick={handleStartMeeting} size="sm" variant="outline">
-            <CalendarIcon className="size-3.5" />
-            미팅 시작
-          </Button>
-          {onToggleCollapse ? (
-            <Button
-              aria-label="미팅 문서 접기"
-              onClick={onToggleCollapse}
-              size="icon-sm"
-              variant="ghost"
-            >
-              <PanelRightCloseIcon className="size-3.5" />
-            </Button>
-          ) : null}
-        </div>
+        <Button onClick={handleStartMeeting} size="sm" variant="outline">
+          <CalendarIcon className="size-3.5" />
+          미팅 시작
+        </Button>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
