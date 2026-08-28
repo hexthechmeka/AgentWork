@@ -16,6 +16,7 @@ import {
   allowedModelIds,
   chatModels,
   DEFAULT_CHAT_MODEL,
+  GLM_VISION_MODEL_ID,
   getCapabilities,
   getModelAvailability,
 } from "@/lib/ai/models";
@@ -118,9 +119,22 @@ export async function POST(request: Request) {
       return new ChatbotError("unauthorized:chat").toResponse();
     }
 
-    const chatModel = allowedModelIds.has(selectedChatModel)
+    let chatModel = allowedModelIds.has(selectedChatModel)
       ? selectedChatModel
       : DEFAULT_CHAT_MODEL;
+
+    // GLM-5.3/5.2 can't accept image input at all. If the user attaches an
+    // image while one of them is selected, silently upgrade this turn to
+    // the vision-capable GLM model instead of failing the request.
+    const hasFileAttachment =
+      message?.parts?.some((part) => part.type === "file") ?? false;
+    if (
+      hasFileAttachment &&
+      chatModel.startsWith("glm/") &&
+      chatModel !== GLM_VISION_MODEL_ID
+    ) {
+      chatModel = GLM_VISION_MODEL_ID;
+    }
 
     await checkIpRateLimit(ipAddress(request));
 

@@ -20,6 +20,11 @@ export const titleModel = {
   provider: "glm",
 };
 
+// When a text-only GLM model is sent a message with an image attached, the
+// chat route silently upgrades the call to this vision-capable model for
+// that turn (GLM-5.3/5.2 can't accept image input at all).
+export const GLM_VISION_MODEL_ID = "glm/glm-5v-turbo";
+
 export type ModelCapabilities = {
   tools: boolean;
   vision: boolean;
@@ -65,13 +70,32 @@ export const chatModels: ChatModel[] = [
     name: "GLM 5.2",
     provider: "glm",
   },
+  {
+    description: "이미지 인식 지원",
+    id: GLM_VISION_MODEL_ID,
+    name: "GLM Vision",
+    provider: "glm",
+  },
 ];
+
+// GLM models aren't registered in the Vercel AI Gateway (we call the GLM
+// API directly), so the gateway endpoint lookup below always 404s for them.
+// Hardcode their real capabilities instead of silently defaulting to false.
+const GLM_KNOWN_CAPABILITIES: Record<string, ModelCapabilities> = {
+  "glm/glm-5.2": { reasoning: true, tools: true, vision: true },
+  "glm/glm-5.3": { reasoning: true, tools: true, vision: true },
+  [GLM_VISION_MODEL_ID]: { reasoning: true, tools: true, vision: true },
+};
 
 export async function getCapabilities(): Promise<
   Record<string, ModelCapabilities>
 > {
   const results = await Promise.all(
     chatModels.map(async (model) => {
+      if (GLM_KNOWN_CAPABILITIES[model.id]) {
+        return [model.id, GLM_KNOWN_CAPABILITIES[model.id]];
+      }
+
       try {
         const res = await fetch(
           `https://ai-gateway.vercel.sh/v1/models/${model.id}/endpoints`,
