@@ -15,18 +15,27 @@ const FileSchema = z.object({
     }),
 });
 
-export async function POST(request: Request) {
-  const session = await auth();
-
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  if (request.body === null) {
-    return new Response("Request body is empty", { status: 400 });
-  }
-
+async function getSessionSafe() {
   try {
+    return await auth();
+  } catch (error) {
+    console.error("Upload route: auth() threw:", error);
+    return null;
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const session = await getSessionSafe();
+
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (request.body === null) {
+      return new Response("Request body is empty", { status: 400 });
+    }
+
     const formData = await request.formData();
     const file = formData.get("file") as Blob;
 
@@ -55,11 +64,11 @@ export async function POST(request: Request) {
 
       return NextResponse.json(data);
     } catch (error) {
-      console.error("Blob upload failed:", error);
+      console.error("Upload route: put() failed:", error);
       return NextResponse.json({ error: "Upload failed" }, { status: 500 });
     }
   } catch (error) {
-    console.error("Failed to process upload request:", error);
+    console.error("Upload route: unhandled error before blob upload:", error);
     return NextResponse.json(
       { error: "Failed to process request" },
       { status: 500 }
