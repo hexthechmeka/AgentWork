@@ -1,20 +1,29 @@
 "use client";
 
-import { SendIcon } from "lucide-react";
+import { Loader2Icon, SearchCheckIcon, SendIcon } from "lucide-react";
 import { useCallback, useState } from "react";
 import { ModelAvatar } from "@/components/chat/model-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-type LocalComment = {
+export type GlmComment = {
   id: string;
   role: "user" | "glm";
   text: string;
 };
 
-export function GlmPanel() {
+export function GlmPanel({
+  comments,
+  onAddComment,
+  onReviewClick,
+  isReviewing,
+}: {
+  comments: GlmComment[];
+  onAddComment: (comment: GlmComment) => void;
+  onReviewClick: () => void;
+  isReviewing: boolean;
+}) {
   const [input, setInput] = useState("");
-  const [comments, setComments] = useState<LocalComment[]>([]);
 
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -31,15 +40,12 @@ export function GlmPanel() {
         return;
       }
 
-      setComments((prev) => [
-        ...prev,
-        { id: crypto.randomUUID(), role: "user", text },
-      ]);
+      onAddComment({ id: crypto.randomUUID(), role: "user", text });
       setInput("");
 
       // GLM 호출 로직은 다음 단계에서 구현됩니다.
     },
-    [input]
+    [input, onAddComment]
   );
 
   return (
@@ -47,6 +53,20 @@ export function GlmPanel() {
       <header className="flex h-14 shrink-0 items-center gap-2 border-border/40 border-b px-4">
         <ModelAvatar className="size-6 text-[11px]" provider="glm" />
         <span className="font-medium text-sm">GLM</span>
+        <Button
+          className="ml-auto"
+          disabled={isReviewing}
+          onClick={onReviewClick}
+          size="sm"
+          variant="outline"
+        >
+          {isReviewing ? (
+            <Loader2Icon className="size-3.5 animate-spin" />
+          ) : (
+            <SearchCheckIcon className="size-3.5" />
+          )}
+          기획서 검토
+        </Button>
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">

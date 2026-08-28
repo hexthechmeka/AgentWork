@@ -49,6 +49,13 @@ type ActiveChatContextValue = {
   setCurrentEffort: (effort: EffortLevel) => void;
   isProjectView: boolean;
   projectId: string | null;
+  onWriteNotes?: () => void;
+  isGeneratingNotes?: boolean;
+};
+
+type ChatFinishedInfo = {
+  message: ChatMessage;
+  messages: ChatMessage[];
 };
 
 const ActiveChatContext = createContext<ActiveChatContextValue | null>(null);
@@ -63,11 +70,17 @@ export function ActiveChatProvider({
   chatIdOverride,
   projectIdOverride,
   chatKindOverride = "planning",
+  onWriteNotes,
+  isGeneratingNotes,
+  onChatFinished,
 }: {
   children: ReactNode;
   chatIdOverride?: string;
   projectIdOverride?: string;
   chatKindOverride?: "planning" | "unified";
+  onWriteNotes?: () => void;
+  isGeneratingNotes?: boolean;
+  onChatFinished?: (info: ChatFinishedInfo) => void;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -107,6 +120,11 @@ export function ActiveChatProvider({
   }, [projectIdFromUrl]);
 
   const [input, setInput] = useState("");
+
+  const onChatFinishedRef = useRef(onChatFinished);
+  useEffect(() => {
+    onChatFinishedRef.current = onChatFinished;
+  }, [onChatFinished]);
 
   const { data: chatData, isLoading } = useSWR(
     isNewChat
@@ -152,8 +170,9 @@ export function ActiveChatProvider({
         });
       }
     },
-    onFinish: () => {
+    onFinish: ({ message, messages: finishedMessages }) => {
       mutate(getProjectsKey());
+      onChatFinishedRef.current?.({ message, messages: finishedMessages });
     },
     sendAutomaticallyWhen: ({ messages: currentMessages }) => {
       const lastMessage = currentMessages.at(-1);
@@ -278,10 +297,12 @@ export function ActiveChatProvider({
       currentEffort,
       currentModelId,
       input,
+      isGeneratingNotes,
       isLoading: !isNewChat && isLoading,
       isProjectView,
       isReadonly,
       messages,
+      onWriteNotes,
       projectId: projectIdFromUrl,
       regenerate,
       sendMessage,
@@ -310,6 +331,8 @@ export function ActiveChatProvider({
       currentEffort,
       isProjectView,
       projectIdFromUrl,
+      onWriteNotes,
+      isGeneratingNotes,
     ]
   );
 

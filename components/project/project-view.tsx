@@ -1,22 +1,38 @@
 "use client";
 
 import { CalendarIcon } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  generateMeetingNotes,
+  generateSpecFromNotes,
+  reviewSpecWithGlm,
+  updateMeetingNotesIncremental,
+} from "@/app/project/actions";
 import { ModelAvatar } from "@/components/chat/model-badge";
 import { ChatShell } from "@/components/chat/shell";
+import { toast } from "@/components/chat/toast";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
+import { Switch } from "@/components/ui/switch";
 import { ActiveChatProvider } from "@/hooks/use-active-chat";
-import { cn } from "@/lib/utils";
-import { GlmPanel } from "./glm-panel";
-import { MeetingDocumentPanel } from "./meeting-document-panel";
+import { DEFAULT_SPEC_MODEL_ID } from "@/lib/ai/models";
+import type { ChatMessage } from "@/lib/types";
+import { cn, getTextFromMessage } from "@/lib/utils";
+import { type GlmComment, GlmPanel } from "./glm-panel";
+import { type DocMode, MeetingDocumentPanel } from "./meeting-document-panel";
 import { UnifiedChatPanel } from "./unified-chat-panel";
 
 const MEETING_PANEL_SIZE = 40;
 const GLM_PANEL_SIZE = 30;
+const PLACEHOLDER_DOC = `# 구현계획서
+
+아직 작성된 내용이 없습니다.
+
+좌측 상단의 "노트 작성"을 누르거나, "미팅 시작"으로 실시간 노트 모드를 켜보세요.
+`;
 
 type ProjectTab = "workspace" | "unified";
 
@@ -88,6 +104,21 @@ export function ProjectView({
   const [activeTab, setActiveTab] = useState<ProjectTab>("workspace");
   const [isMeetingOpen, setIsMeetingOpen] = useState(false);
   const [isGlmOpen, setIsGlmOpen] = useState(false);
+  const [autoMode, setAutoMode] = useState(false);
+  const [isMeetingLive, setIsMeetingLive] = useState(false);
+
+  const [docContent, setDocContent] = useState(PLACEHOLDER_DOC);
+  const docContentRef = useRef(docContent);
+  useEffect(() => {
+    docContentRef.current = docContent;
+  }, [docContent]);
+
+  const [docMode, setDocMode] = useState<DocMode>("edit");
+  const [specModelId, setSpecModelId] = useState(DEFAULT_SPEC_MODEL_ID);
+  const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
+  const [isGeneratingSpec, setIsGeneratingSpec] = useState(false);
+  const [isReviewing, setIsReviewing] = useState(false);
+  const [glmComments, setGlmComments] = useState<GlmComment[]>([]);
 
   const toggleMeeting = useCallback(() => {
     setIsMeetingOpen((prev) => !prev);
@@ -95,6 +126,11 @@ export function ProjectView({
 
   const toggleGlm = useCallback(() => {
     setIsGlmOpen((prev) => !prev);
+  }, []);
+
+  const toggleMeetingLive = useCallback(() => {
+    setIsMeetingLive((prev) => !prev);
+    setIsMeetingOpen(true);
   }, []);
 
   const handleWorkspaceTabClick = useCallback(() => {
@@ -105,6 +141,161 @@ export function ProjectView({
     setActiveTab("unified");
   }, []);
 
+  const handleAddGlmComment = useCallback((comment: GlmComment) => {
+    setGlmComments((prev) => [...prev, comment]);
+  }, []);
+
+  const handleGenerateSpec = useCallback(
+    async (notesOverride?: string) => {
+      if (!existingChatId) {
+        toast({
+          description: "먼저 좌측에서 대화를 시작해주세요.",
+          type: "error",
+        });
+        return;
+      }
+
+      setIsGeneratingSpec(true);
+      setIsMeetingOpen(true);
+      try {
+        const spec = await generateSpecFromNotes({
+          chatId: existingChatId,
+          modelId: specModelId,
+          notes: notesOverride ?? docContent,
+        });
+        setDocContent(spec);
+        setDocMode("edit");
+
+        if (autoMode) {
+          setIsGlmOpen(true);
+          setIsReviewing(true);
+          try {
+            const { annotatedSpec, explanation } = await reviewSpecWithGlm({
+              chatId: existingChatId,
+              spec,
+            });
+            setDocContent(annotatedSpec);
+            setDocMode("preview");
+            handleAddGlmComment({
+              id: crypto.randomUUID(),
+              role: "glm",
+              text: explanation,
+            });
+          } catch {
+            toast({
+              description: "기획서 검토에 실패했습니다.",
+              type: "error",
+            });
+          } finally {
+            setIsReviewing(false);
+          }
+        }
+      } catch {
+        toast({ description: "기획서 작성에 실패했습니다.", type: "error" });
+      } finally {
+        setIsGeneratingSpec(false);
+      }
+    },
+    [existingChatId, specModelId, docContent, autoMode, handleAddGlmComment]
+  );
+
+  const handleWriteNotes = useCallback(async () => {
+    if (!existingChatId) {
+      toast({
+        description: "먼저 좌측에서 대화를 시작해주세요.",
+        type: "error",
+      });
+      return;
+    }
+
+    setIsGeneratingNotes(true);
+    setIsMeetingOpen(true);
+    try {
+      const notes = await generateMeetingNotes({ chatId: existingChatId });
+      setDocContent(notes);
+      setDocMode("edit");
+
+      if (autoMode) {
+        await handleGenerateSpec(notes);
+      }
+    } catch {
+      toast({ description: "노트 작성에 실패했습니다.", type: "error" });
+    } finally {
+      setIsGeneratingNotes(false);
+    }
+  }, [existingChatId, autoMode, handleGenerateSpec]);
+
+  const handleChatFinished = useCallback(
+    ({
+      message,
+      messages,
+    }: {
+      message: ChatMessage;
+      messages: ChatMessage[];
+    }) => {
+      if (!isMeetingLive || message.role !== "assistant") {
+        return;
+      }
+
+      const assistantText = getTextFromMessage(message);
+      if (!assistantText.trim()) {
+        return;
+      }
+
+      const lastUserMessage = [...messages]
+        .reverse()
+        .find((m) => m.role === "user");
+      const userText = lastUserMessage
+        ? getTextFromMessage(lastUserMessage)
+        : "";
+
+      setIsMeetingOpen(true);
+      updateMeetingNotesIncremental({
+        assistantText,
+        previousNotes: docContentRef.current,
+        userText,
+      })
+        .then(setDocContent)
+        .catch(() => {
+          // Non-fatal: a single missed live update shouldn't interrupt the chat.
+        });
+    },
+    [isMeetingLive]
+  );
+
+  const handleReviewClick = useCallback(async () => {
+    if (!existingChatId) {
+      toast({
+        description: "먼저 좌측에서 대화를 시작해주세요.",
+        type: "error",
+      });
+      return;
+    }
+
+    setIsReviewing(true);
+    try {
+      const { annotatedSpec, explanation } = await reviewSpecWithGlm({
+        chatId: existingChatId,
+        spec: docContent,
+      });
+      setDocContent(annotatedSpec);
+      setDocMode("preview");
+      handleAddGlmComment({
+        id: crypto.randomUUID(),
+        role: "glm",
+        text: explanation,
+      });
+    } catch {
+      toast({ description: "기획서 검토에 실패했습니다.", type: "error" });
+    } finally {
+      setIsReviewing(false);
+    }
+  }, [existingChatId, docContent, handleAddGlmComment]);
+
+  const handleGenerateSpecClick = useCallback(() => {
+    handleGenerateSpec();
+  }, [handleGenerateSpec]);
+
   const leftPanelSize =
     100 -
     (isMeetingOpen ? MEETING_PANEL_SIZE : 0) -
@@ -112,19 +303,26 @@ export function ProjectView({
 
   return (
     <div className="flex h-dvh w-full flex-col">
-      <div className="flex h-11 shrink-0 items-center gap-1 border-border/40 border-b bg-sidebar px-3">
-        <TabButton
-          isActive={activeTab === "workspace"}
-          onClick={handleWorkspaceTabClick}
-        >
-          작업 뷰
-        </TabButton>
-        <TabButton
-          isActive={activeTab === "unified"}
-          onClick={handleUnifiedTabClick}
-        >
-          통합 채팅
-        </TabButton>
+      <div className="flex h-11 shrink-0 items-center gap-3 border-border/40 border-b bg-sidebar px-3">
+        <div className="flex items-center gap-1">
+          <TabButton
+            isActive={activeTab === "workspace"}
+            onClick={handleWorkspaceTabClick}
+          >
+            작업 뷰
+          </TabButton>
+          <TabButton
+            isActive={activeTab === "unified"}
+            onClick={handleUnifiedTabClick}
+          >
+            통합 채팅
+          </TabButton>
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-[12px] text-muted-foreground">자동 모드</span>
+          <Switch checked={autoMode} onCheckedChange={setAutoMode} />
+        </div>
       </div>
 
       <div className="min-h-0 flex-1">
@@ -164,6 +362,9 @@ export function ProjectView({
               >
                 <ActiveChatProvider
                   chatIdOverride={existingChatId}
+                  isGeneratingNotes={isGeneratingNotes}
+                  onChatFinished={handleChatFinished}
+                  onWriteNotes={handleWriteNotes}
                   projectIdOverride={projectId}
                 >
                   <ChatShell />
@@ -178,7 +379,19 @@ export function ProjectView({
                     defaultSize={MEETING_PANEL_SIZE}
                     minSize={25}
                   >
-                    <MeetingDocumentPanel projectName={projectName} />
+                    <MeetingDocumentPanel
+                      content={docContent}
+                      isGeneratingSpec={isGeneratingSpec}
+                      isMeetingLive={isMeetingLive}
+                      mode={docMode}
+                      onContentChange={setDocContent}
+                      onGenerateSpec={handleGenerateSpecClick}
+                      onModeChange={setDocMode}
+                      onSpecModelChange={setSpecModelId}
+                      onToggleLive={toggleMeetingLive}
+                      projectName={projectName}
+                      specModelId={specModelId}
+                    />
                   </ResizablePanel>
                 </>
               ) : null}
@@ -191,7 +404,12 @@ export function ProjectView({
                     defaultSize={GLM_PANEL_SIZE}
                     minSize={20}
                   >
-                    <GlmPanel />
+                    <GlmPanel
+                      comments={glmComments}
+                      isReviewing={isReviewing}
+                      onAddComment={handleAddGlmComment}
+                      onReviewClick={handleReviewClick}
+                    />
                   </ResizablePanel>
                 </>
               ) : null}

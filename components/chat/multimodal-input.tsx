@@ -82,6 +82,11 @@ function setCookie(name: string, value: string) {
   document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAge}`;
 }
 
+// Typing this in the project view's planning chat (e.g. "노트 작성해줘",
+// "노트정리해줘") triggers the meeting notes generation directly instead of
+// being sent to the model as a normal chat message.
+const NOTE_TRIGGER_PATTERN = /^노트\s*(작성|정리)/;
+
 function PureMultimodalInput({
   chatId,
   input,
@@ -123,7 +128,8 @@ function PureMultimodalInput({
   isLoading?: boolean;
 }) {
   const router = useRouter();
-  const { isProjectView, projectId } = useActiveChat();
+  const { isProjectView, projectId, onWriteNotes, isGeneratingNotes } =
+    useActiveChat();
   const { setTheme, resolvedTheme } = useTheme();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
@@ -419,12 +425,32 @@ function PureMultimodalInput({
     if (!input.trim() && attachments.length === 0) {
       return;
     }
+    if (
+      onWriteNotes &&
+      !isGeneratingNotes &&
+      NOTE_TRIGGER_PATTERN.test(input.trim())
+    ) {
+      onWriteNotes();
+      setLocalStorageInput("");
+      setInput("");
+      return;
+    }
     if (status === "ready" || status === "error") {
       submitForm();
     } else {
       toast.error("모델의 응답이 끝날 때까지 기다려주세요!");
     }
-  }, [attachments.length, handleSlashSelect, input, status, submitForm]);
+  }, [
+    attachments.length,
+    handleSlashSelect,
+    input,
+    status,
+    submitForm,
+    onWriteNotes,
+    isGeneratingNotes,
+    setInput,
+    setLocalStorageInput,
+  ]);
 
   const handleTextareaKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

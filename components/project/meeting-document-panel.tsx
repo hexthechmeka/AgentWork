@@ -1,32 +1,63 @@
 "use client";
 
-import { CalendarIcon } from "lucide-react";
-import { useCallback, useState } from "react";
-import { toast } from "sonner";
+import { Loader2Icon, PenLineIcon, PlayIcon } from "lucide-react";
+import type { ReactNode } from "react";
+import { useCallback } from "react";
+import { MessageResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { SPEC_MODEL_OPTIONS } from "@/lib/ai/models";
 
-const PLACEHOLDER_DOC = `# 구현계획서
+export type DocMode = "edit" | "preview";
 
-아직 작성된 내용이 없습니다.
-
-"미팅 시작"을 누르면 Claude와의 기획 대화를 바탕으로
-이 문서의 초안이 여기에 채워질 예정입니다 (다음 단계에서 구현).
-`;
-
-export function MeetingDocumentPanel({ projectName }: { projectName: string }) {
-  const [content, setContent] = useState(PLACEHOLDER_DOC);
-
-  const handleStartMeeting = useCallback(() => {
-    toast.info("미팅 세션은 다음 단계에서 구현됩니다.");
-  }, []);
-
+export function MeetingDocumentPanel({
+  projectName,
+  content,
+  onContentChange,
+  mode,
+  onModeChange,
+  specModelId,
+  onSpecModelChange,
+  onGenerateSpec,
+  isGeneratingSpec,
+  isMeetingLive,
+  onToggleLive,
+  bottomSlot,
+}: {
+  projectName: string;
+  content: string;
+  onContentChange: (value: string) => void;
+  mode: DocMode;
+  onModeChange: (mode: DocMode) => void;
+  specModelId: string;
+  onSpecModelChange: (id: string) => void;
+  onGenerateSpec: () => void;
+  isGeneratingSpec: boolean;
+  isMeetingLive: boolean;
+  onToggleLive: () => void;
+  bottomSlot?: ReactNode;
+}) {
   const handleContentChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setContent(e.target.value);
+      onContentChange(e.target.value);
     },
-    []
+    [onContentChange]
   );
+
+  const handleEditClick = useCallback(() => {
+    onModeChange("edit");
+  }, [onModeChange]);
+
+  const handlePreviewClick = useCallback(() => {
+    onModeChange("preview");
+  }, [onModeChange]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -37,20 +68,100 @@ export function MeetingDocumentPanel({ projectName }: { projectName: string }) {
             {projectName}
           </span>
         </div>
-        <Button onClick={handleStartMeeting} size="sm" variant="outline">
-          <CalendarIcon className="size-3.5" />
-          미팅 시작
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={onToggleLive}
+            size="sm"
+            variant={isMeetingLive ? "default" : "outline"}
+          >
+            {isMeetingLive ? (
+              <>
+                <span className="relative flex size-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                  <span className="relative inline-flex size-2 rounded-full bg-red-500" />
+                </span>
+                미팅 진행중
+              </>
+            ) : (
+              <>
+                <PlayIcon className="size-3.5" />
+                미팅 시작
+              </>
+            )}
+          </Button>
+          <button
+            className={
+              mode === "edit"
+                ? "rounded-md bg-muted px-2 py-1 text-[12px] text-foreground"
+                : "rounded-md px-2 py-1 text-[12px] text-muted-foreground hover:text-foreground"
+            }
+            onClick={handleEditClick}
+            type="button"
+          >
+            편집
+          </button>
+          <button
+            className={
+              mode === "preview"
+                ? "rounded-md bg-muted px-2 py-1 text-[12px] text-foreground"
+                : "rounded-md px-2 py-1 text-[12px] text-muted-foreground hover:text-foreground"
+            }
+            onClick={handlePreviewClick}
+            type="button"
+          >
+            미리보기
+          </button>
+        </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        <Textarea
-          className="h-full min-h-full resize-none border-none bg-transparent font-mono text-sm shadow-none focus-visible:ring-0"
-          onChange={handleContentChange}
-          placeholder="구현계획서를 작성하세요..."
-          value={content}
-        />
+        {mode === "edit" ? (
+          <Textarea
+            className="h-full min-h-full resize-none border-none bg-transparent font-mono text-sm shadow-none focus-visible:ring-0"
+            onChange={handleContentChange}
+            placeholder="구현계획서를 작성하세요..."
+            value={content}
+          />
+        ) : (
+          <div className="[&_code]:rounded-none [&_code]:bg-transparent [&_code]:px-0 [&_code]:font-medium [&_code]:text-red-600 dark:[&_code]:text-red-400">
+            <MessageResponse>{content}</MessageResponse>
+          </div>
+        )}
       </div>
+
+      <div className="flex shrink-0 items-center gap-2 border-border/40 border-t p-3">
+        <Select onValueChange={onSpecModelChange} value={specModelId}>
+          <SelectTrigger className="h-8 w-[110px] text-[12px]" size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SPEC_MODEL_OPTIONS.map((option) => (
+              <SelectItem key={option.id} value={option.id}>
+                {option.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          className="flex-1"
+          disabled={isGeneratingSpec}
+          onClick={onGenerateSpec}
+          size="sm"
+          variant="outline"
+        >
+          {isGeneratingSpec ? (
+            <Loader2Icon className="size-3.5 animate-spin" />
+          ) : (
+            <PenLineIcon className="size-3.5" />
+          )}
+          기획서 작성
+        </Button>
+      </div>
+
+      {/* Reserved for future additions (e.g. version history, comments). */}
+      {bottomSlot ? (
+        <div className="shrink-0 border-border/40 border-t">{bottomSlot}</div>
+      ) : null}
     </div>
   );
 }

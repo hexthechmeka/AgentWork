@@ -25,6 +25,16 @@ export const titleModel = {
 // that turn (GLM-5.3/5.2 can't accept image input at all).
 export const GLM_VISION_MODEL_ID = "glm/glm-5v-turbo";
 
+// Model choices for compressing meeting notes into a formal spec (project
+// view's "기획서 작성" step). Scoped to this one feature — not part of the
+// main model selector, so these don't need to be in `chatModels` below.
+export const SPEC_MODEL_OPTIONS = [
+  { id: "anthropic/claude-sonnet-5", name: "Sonnet" },
+  { id: "anthropic/claude-opus-5", name: "Opus" },
+  { id: "anthropic/claude-fable-5", name: "Fable" },
+] as const;
+export const DEFAULT_SPEC_MODEL_ID = "anthropic/claude-sonnet-5";
+
 export type ModelCapabilities = {
   tools: boolean;
   vision: boolean;

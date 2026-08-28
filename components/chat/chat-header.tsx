@@ -1,11 +1,10 @@
 "use client";
 
-import { PanelLeftIcon } from "lucide-react";
-import Link from "next/link";
+import { Loader2Icon, NotebookPenIcon, PanelLeftIcon } from "lucide-react";
 import { memo } from "react";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/components/ui/sidebar";
-import { VercelIcon } from "./icons";
+import { useActiveChat } from "@/hooks/use-active-chat";
 import { VisibilitySelector, type VisibilityType } from "./visibility-selector";
 
 function PureChatHeader({
@@ -18,6 +17,7 @@ function PureChatHeader({
   isReadonly: boolean;
 }) {
   const { state, toggleSidebar, isMobile } = useSidebar();
+  const { isProjectView, onWriteNotes, isGeneratingNotes } = useActiveChat();
 
   if (state === "collapsed" && !isMobile) {
     return null;
@@ -34,15 +34,6 @@ function PureChatHeader({
         <PanelLeftIcon className="size-4" />
       </Button>
 
-      <Link
-        className="flex size-8 items-center justify-center rounded-lg md:hidden"
-        href="https://vercel.com/templates/next.js/chatbot"
-        rel="noopener noreferrer"
-        target="_blank"
-      >
-        <VercelIcon size={14} />
-      </Link>
-
       {!isReadonly && (
         <VisibilitySelector
           chatId={chatId}
@@ -50,19 +41,22 @@ function PureChatHeader({
         />
       )}
 
-      <Button
-        asChild
-        className="hidden rounded-lg bg-foreground px-4 text-background hover:bg-foreground/90 md:ml-auto md:flex"
-      >
-        <Link
-          href="https://vercel.com/templates/next.js/chatbot"
-          rel="noopener noreferrer"
-          target="_blank"
+      {isProjectView && onWriteNotes ? (
+        <Button
+          className="md:ml-auto"
+          disabled={isGeneratingNotes}
+          onClick={onWriteNotes}
+          size="sm"
+          variant="outline"
         >
-          <VercelIcon size={16} />
-          Vercel로 배포하기
-        </Link>
-      </Button>
+          {isGeneratingNotes ? (
+            <Loader2Icon className="size-3.5 animate-spin" />
+          ) : (
+            <NotebookPenIcon className="size-3.5" />
+          )}
+          노트 작성
+        </Button>
+      ) : null}
     </header>
   );
 }
