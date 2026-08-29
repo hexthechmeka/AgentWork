@@ -88,10 +88,12 @@ function SparklineBar({
 }) {
   return (
     <div
-      className={cn("min-h-px flex-1 rounded-[1px]", LEVEL_BAR[level])}
+      className={cn(
+        "w-[3px] shrink-0 rounded-[1px]",
+        value === 0 ? "bg-sidebar-foreground/15" : LEVEL_BAR[level]
+      )}
       style={{
-        height: `${Math.max(4, (value / max) * 100)}%`,
-        opacity: value === 0 ? 0.25 : 1,
+        height: value === 0 ? "2px" : `${Math.max(8, (value / max) * 100)}%`,
       }}
     />
   );
@@ -108,7 +110,7 @@ function Sparkline({
 }) {
   const max = Math.max(...values, 0.000_001);
   return (
-    <div className={cn("flex items-end gap-px", className)}>
+    <div className={cn("flex items-end gap-[2px]", className)}>
       {values.map((v, i) => (
         <SparklineBar
           // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length daily buckets
