@@ -846,22 +846,6 @@ export async function getUsageSummary({ userId }: { userId: string }) {
           )
         );
 
-      const seriesRows = await db
-        .select({
-          cost: sql<string>`coalesce(sum(${usageEvent.costUsd}), 0)`,
-          day: sql<string>`to_char(date_trunc('day', ${usageEvent.createdAt}), 'YYYY-MM-DD')`,
-        })
-        .from(usageEvent)
-        .where(
-          and(
-            eq(usageEvent.userId, userId),
-            eq(usageEvent.provider, provider),
-            gte(usageEvent.createdAt, sql`now() - interval '13 days'`)
-          )
-        )
-        .groupBy(sql`date_trunc('day', ${usageEvent.createdAt})`)
-        .orderBy(sql`date_trunc('day', ${usageEvent.createdAt})`);
-
       const costUsd = Number(totals?.costUsd ?? 0);
       const hardLimitUsd =
         limit.hardLimitUsd === null ? null : Number(limit.hardLimitUsd);
@@ -878,10 +862,6 @@ export async function getUsageSummary({ userId }: { userId: string }) {
         outputTokens: Number(totals?.outputTokens ?? 0),
         periodStart: periodStart.toISOString(),
         provider,
-        series: seriesRows.map((r) => ({
-          cost: Number(r.cost),
-          day: r.day,
-        })),
         softExceeded:
           softLimitUsd !== null && softLimitUsd > 0 && costUsd >= softLimitUsd,
         softLimitUsd,

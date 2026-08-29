@@ -1,7 +1,8 @@
 "use client";
 
+import { formatDistanceToNow } from "date-fns";
 import { RotateCcwIcon, TriangleAlertIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import useSWR from "swr";
 import { type HeadroomLevel, headroomLevel } from "@/lib/ai/pricing";
 import { cn, fetcher } from "@/lib/utils";
@@ -18,7 +19,6 @@ type ProviderUsage = {
   softExceeded: boolean;
   hardLocked: boolean;
   periodStart: string;
-  series: { day: string; cost: number }[];
 };
 
 type UsageResponse = { providers: ProviderUsage[] };
@@ -28,17 +28,14 @@ const PROVIDER_LABEL: Record<ProviderKey, string> = {
   glm: "GLM",
 };
 
-const SERIES_DAYS = 14;
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-const LEVEL_BAR: Record<HeadroomLevel, string> = {
+const LEVEL_FILL: Record<HeadroomLevel, string> = {
   danger: "bg-red-500",
-  neutral: "bg-emerald-500/70",
+  neutral: "bg-emerald-500/80",
   warn: "bg-amber-500",
 };
 const LEVEL_TEXT: Record<HeadroomLevel, string> = {
   danger: "text-red-500",
-  neutral: "text-emerald-500",
+  neutral: "text-sidebar-foreground/70",
   warn: "text-amber-500",
 };
 
@@ -65,61 +62,37 @@ function formatUsd(n: number): string {
   return `$${n.toFixed(0)}`;
 }
 
-/** Fill the series out to a fixed 14-day window ending today. */
-function normalizeSeries(series: { day: string; cost: number }[]): number[] {
-  const byDay = new Map(series.map((s) => [s.day, s.cost]));
-  const start = Date.now();
-  return Array.from({ length: SERIES_DAYS }, (_, idx) => {
-    const key = new Date(start - (SERIES_DAYS - 1 - idx) * DAY_MS)
-      .toISOString()
-      .slice(0, 10);
-    return byDay.get(key) ?? 0;
-  });
+/** Percent of the (hard, else soft) limit consumed this period. null = no limit. */
+function usedPercent(usage: ProviderUsage): number | null {
+  const denom = usage.hardLimitUsd ?? usage.softLimitUsd;
+  if (!denom || denom <= 0) {
+    return null;
+  }
+  return Math.min(100, (usage.costUsd / denom) * 100);
 }
 
-function SparklineBar({
-  value,
-  max,
+function MeterBar({
+  percent,
   level,
+  className,
 }: {
-  value: number;
-  max: number;
+  percent: number | null;
   level: HeadroomLevel;
+  className?: string;
 }) {
   return (
     <div
       className={cn(
-        "w-[3px] shrink-0 rounded-[1px]",
-        value === 0 ? "bg-sidebar-foreground/15" : LEVEL_BAR[level]
+        "w-full overflow-hidden rounded-full bg-sidebar-foreground/10",
+        className
       )}
-      style={{
-        height: value === 0 ? "2px" : `${Math.max(8, (value / max) * 100)}%`,
-      }}
-    />
-  );
-}
-
-function Sparkline({
-  values,
-  level,
-  className,
-}: {
-  values: number[];
-  level: HeadroomLevel;
-  className?: string;
-}) {
-  const max = Math.max(...values, 0.000_001);
-  return (
-    <div className={cn("flex items-end gap-[2px]", className)}>
-      {values.map((v, i) => (
-        <SparklineBar
-          // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length daily buckets
-          key={i}
-          level={level}
-          max={max}
-          value={v}
-        />
-      ))}
+    >
+      <div
+        className={cn("h-full rounded-full transition-all", LEVEL_FILL[level])}
+        style={{
+          width: percent === null ? "0%" : `${Math.max(percent, 1.5)}%`,
+        }}
+      />
     </div>
   );
 }
@@ -199,7 +172,7 @@ function ProviderRow({
   onReset: (provider: ProviderKey) => void;
 }) {
   const level = headroomLevel(usage.costUsd, usage.hardLimitUsd);
-  const values = useMemo(() => normalizeSeries(usage.series), [usage.series]);
+  const percent = usedPercent(usage);
 
   const handleSoftCommit = useCallback(
     (v: number | null) => {
@@ -219,21 +192,18 @@ function ProviderRow({
 
   if (!expanded) {
     return (
-      <div className="flex items-center gap-2">
-        <span className="w-10 shrink-0 text-[11px] text-sidebar-foreground/60">
-          {PROVIDER_LABEL[usage.provider]}
-        </span>
-        <Sparkline className="h-5 flex-1" level={level} values={values} />
-        <span
-          className={cn(
-            "w-14 shrink-0 text-right text-[11px] tabular-nums",
-            level === "neutral"
-              ? "text-sidebar-foreground/70"
-              : LEVEL_TEXT[level]
-          )}
-        >
-          {formatUsd(usage.costUsd)}
-        </span>
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="text-sidebar-foreground/60">
+            {PROVIDER_LABEL[usage.provider]}
+          </span>
+          <span className={cn("tabular-nums", LEVEL_TEXT[level])}>
+            {percent === null
+              ? formatUsd(usage.costUsd)
+              : `${Math.round(percent)}%`}
+          </span>
+        </div>
+        <MeterBar className="h-1.5" level={level} percent={percent} />
       </div>
     );
   }
@@ -244,12 +214,23 @@ function ProviderRow({
         <span className="font-medium text-[12px] text-sidebar-foreground">
           {PROVIDER_LABEL[usage.provider]}
         </span>
-        <span className={cn("text-[13px] tabular-nums", LEVEL_TEXT[level])}>
+        <span className="text-[13px] text-sidebar-foreground tabular-nums">
           {formatUsd(usage.costUsd)}
+          {usage.hardLimitUsd ? ` / ${formatUsd(usage.hardLimitUsd)}` : ""}
         </span>
       </div>
 
-      <Sparkline className="h-8" level={level} values={values} />
+      <div className="flex items-center gap-2">
+        <MeterBar className="h-2 flex-1" level={level} percent={percent} />
+        <span
+          className={cn(
+            "w-8 shrink-0 text-right text-[11px] tabular-nums",
+            LEVEL_TEXT[level]
+          )}
+        >
+          {percent === null ? "—" : `${Math.round(percent)}%`}
+        </span>
+      </div>
 
       <div className="flex justify-between text-[11px] text-sidebar-foreground/60 tabular-nums">
         <span>in {formatTokens(usage.inputTokens)}</span>
@@ -269,19 +250,27 @@ function ProviderRow({
         />
       </div>
 
-      <button
-        className={cn(
-          "flex items-center justify-center gap-1.5 rounded-md border py-1 text-[11px] transition-colors",
-          usage.hardLocked
-            ? "border-red-500/40 bg-red-500/10 text-red-500 hover:bg-red-500/20"
-            : "border-sidebar-border text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-        )}
-        onClick={handleReset}
-        type="button"
-      >
-        <RotateCcwIcon className="size-3" />
-        한도 리셋
-      </button>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] text-sidebar-foreground/40">
+          {formatDistanceToNow(new Date(usage.periodStart), {
+            addSuffix: true,
+          })}{" "}
+          리셋됨
+        </span>
+        <button
+          className={cn(
+            "flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition-colors",
+            usage.hardLocked
+              ? "border-red-500/40 bg-red-500/10 text-red-500 hover:bg-red-500/20"
+              : "border-sidebar-border text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+          )}
+          onClick={handleReset}
+          type="button"
+        >
+          <RotateCcwIcon className="size-3" />
+          한도 리셋
+        </button>
+      </div>
     </div>
   );
 }
@@ -377,7 +366,7 @@ export function UsageWidget() {
         <span>{expanded ? "접기" : "펼치기"}</span>
       </button>
 
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-2">
         {providers.length === 0 ? (
           <div className="px-1.5 py-1 text-[11px] text-sidebar-foreground/40">
             불러오는 중…
