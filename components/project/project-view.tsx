@@ -117,24 +117,20 @@ export function ProjectView({
   const searchParams = useSearchParams();
   const chatParam = searchParams.get("chat");
 
-  const planningChats = useMemo(
-    () => chats.filter((c) => c.kind !== "unified"),
-    [chats]
-  );
   const unifiedChatId = useMemo(
     () => chats.find((c) => c.kind === "unified")?.id,
     [chats]
   );
 
-  // Overview when there's no `?chat=`; a fresh chat when `?chat=new`;
-  // otherwise the requested planning chat (falling back to overview if the
-  // id is stale/deleted).
+  // Overview only when there's genuinely no `?chat=`. Any value means the
+  // workspace: "new" for a fresh chat, otherwise a chat id — which may be one
+  // just created this session and therefore not yet in the server-passed
+  // `chats` list, so we must NOT gate on membership there.
+  const showOverview = chatParam === null || chatParam === "";
   const isNewChat = chatParam === "new";
   const isUnifiedParam = Boolean(unifiedChatId) && chatParam === unifiedChatId;
-  const activeChatId = isNewChat
-    ? undefined
-    : (planningChats.find((c) => c.id === chatParam)?.id ?? undefined);
-  const showOverview = !(isNewChat || activeChatId || isUnifiedParam);
+  const activeChatId =
+    isNewChat || showOverview ? undefined : (chatParam ?? undefined);
 
   const goToChat = useCallback(
     (chatId: string | null) => {
