@@ -17,6 +17,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import type { ArtifactKind } from "@/components/chat/artifact";
 import type { VisibilityType } from "@/components/chat/visibility-selector";
+import { OWNER_EMAIL } from "../constants";
 import { ChatbotError } from "../errors";
 import { generateUUID } from "../utils";
 import {
@@ -58,16 +59,46 @@ export async function createUser(email: string, password: string) {
   }
 }
 
-export async function createGuestUser() {
-  const email = `guest-${Date.now()}`;
-  const password = generateHashedPassword(generateUUID());
-
+// Single-user private deployment: instead of minting a throwaway
+// `guest-<timestamp>` user on every cookieless visit (which orphaned all
+// chat history whenever the JWT cookie was absent — new browser, new PC,
+// cleared cookies, 30-day expiry), resolve every anonymous session to one
+// stable account keyed by OWNER_EMAIL. Same userId everywhere → history
+// follows the user across devices with no login screen.
+export async function getOrCreateOwnerUser() {
   try {
-    return await db.insert(user).values({ email, password }).returning({
-      email: user.email,
-      id: user.id,
-    });
+    const existing = await db
+      .select({ email: user.email, id: user.id })
+      .from(user)
+      .where(eq(user.email, OWNER_EMAIL))
+      .limit(1);
+
+    if (existing.length > 0) {
+      return existing;
+    }
+
+    const password = generateHashedPassword(generateUUID());
+    const inserted = await db
+      .insert(user)
+      .values({ email: OWNER_EMAIL, password })
+      .returning({ email: user.email, id: user.id });
+
+    return inserted;
   } catch (error) {
+    // Lost an insert race with a concurrent first request — the row now
+    // exists, so just read it back.
+    try {
+      const existing = await db
+        .select({ email: user.email, id: user.id })
+        .from(user)
+        .where(eq(user.email, OWNER_EMAIL))
+        .limit(1);
+      if (existing.length > 0) {
+        return existing;
+      }
+    } catch {
+      // fall through to the original error
+    }
     throw new ChatbotError("bad_request:database", { cause: error });
   }
 }
@@ -172,20 +203,21 @@ export async function getProjectWithChatsById({
   userId: string;
 }) {
   try {
-    const [selectedProject] = await db
-      .select()
-      .from(project)
-      .where(and(eq(project.id, id), eq(project.userId, userId)));
+    const [[selectedProject], projectChats] = await Promise.all([
+      db
+        .select()
+        .from(project)
+        .where(and(eq(project.id, id), eq(project.userId, userId))),
+      db
+        .select()
+        .from(chat)
+        .where(eq(chat.projectId, id))
+        .orderBy(desc(chat.createdAt)),
+    ]);
 
     if (!selectedProject) {
       return null;
     }
-
-    const projectChats = await db
-      .select()
-      .from(chat)
-      .where(eq(chat.projectId, id))
-      .orderBy(desc(chat.createdAt));
 
     return { ...selectedProject, chats: projectChats };
   } catch (error) {

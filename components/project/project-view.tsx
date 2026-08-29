@@ -1,7 +1,8 @@
 "use client";
 
 import { CalendarIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   generateMeetingNotes,
   generateSpecFromNotes,
@@ -19,10 +20,12 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { ActiveChatProvider } from "@/hooks/use-active-chat";
 import { DEFAULT_SPEC_MODEL_ID } from "@/lib/ai/models";
+import type { Chat } from "@/lib/db/schema";
 import type { ChatMessage } from "@/lib/types";
 import { cn, getTextFromMessage } from "@/lib/utils";
 import { type GlmComment, GlmPanel } from "./glm-panel";
 import { type DocMode, MeetingDocumentPanel } from "./meeting-document-panel";
+import { ProjectOverview } from "./project-overview";
 import { UnifiedChatPanel } from "./unified-chat-panel";
 
 const MEETING_PANEL_SIZE = 40;
@@ -35,6 +38,18 @@ const PLACEHOLDER_DOC = `# 구현계획서
 `;
 
 type ProjectTab = "workspace" | "unified";
+
+/**
+ * Change the `?chat=` param without a server round-trip. ProjectPage doesn't
+ * read searchParams, so this is a pure client transition — useSearchParams()
+ * below still re-renders on it.
+ */
+function setChatParam(projectId: string, chatId: string | null) {
+  const url = chatId
+    ? `/project/${projectId}?chat=${chatId}`
+    : `/project/${projectId}`;
+  window.history.pushState(null, "", url);
+}
 
 function TabButton({
   isActive,
@@ -93,15 +108,62 @@ function AccordionTab({
 export function ProjectView({
   projectId,
   projectName,
-  existingChatId,
-  unifiedChatId,
+  chats,
 }: {
   projectId: string;
   projectName: string;
-  existingChatId?: string;
-  unifiedChatId?: string;
+  chats: Chat[];
 }) {
-  const [activeTab, setActiveTab] = useState<ProjectTab>("workspace");
+  const searchParams = useSearchParams();
+  const chatParam = searchParams.get("chat");
+
+  const planningChats = useMemo(
+    () => chats.filter((c) => c.kind !== "unified"),
+    [chats]
+  );
+  const unifiedChatId = useMemo(
+    () => chats.find((c) => c.kind === "unified")?.id,
+    [chats]
+  );
+
+  // Overview when there's no `?chat=`; a fresh chat when `?chat=new`;
+  // otherwise the requested planning chat (falling back to overview if the
+  // id is stale/deleted).
+  const isNewChat = chatParam === "new";
+  const isUnifiedParam = Boolean(unifiedChatId) && chatParam === unifiedChatId;
+  const activeChatId = isNewChat
+    ? undefined
+    : (planningChats.find((c) => c.id === chatParam)?.id ?? undefined);
+  const showOverview = !(isNewChat || activeChatId || isUnifiedParam);
+
+  const goToChat = useCallback(
+    (chatId: string | null) => {
+      setChatParam(projectId, chatId);
+    },
+    [projectId]
+  );
+
+  const handleNewChat = useCallback(() => {
+    setChatParam(projectId, "new");
+  }, [projectId]);
+
+  const handleBackToOverview = useCallback(() => {
+    setChatParam(projectId, null);
+  }, [projectId]);
+
+  const [activeTab, setActiveTab] = useState<ProjectTab>(
+    isUnifiedParam ? "unified" : "workspace"
+  );
+
+  // Keep the tab in sync when the chat is switched from the overview.
+  useEffect(() => {
+    if (isUnifiedParam) {
+      setActiveTab("unified");
+    } else if (activeChatId || isNewChat) {
+      setActiveTab("workspace");
+    }
+  }, [isUnifiedParam, activeChatId, isNewChat]);
+
   const [isMeetingOpen, setIsMeetingOpen] = useState(false);
   const [isGlmOpen, setIsGlmOpen] = useState(false);
   const [autoMode, setAutoMode] = useState(false);
@@ -147,7 +209,7 @@ export function ProjectView({
 
   const handleGenerateSpec = useCallback(
     async (notesOverride?: string) => {
-      if (!existingChatId) {
+      if (!activeChatId) {
         toast({
           description: "먼저 좌측에서 대화를 시작해주세요.",
           type: "error",
@@ -159,7 +221,7 @@ export function ProjectView({
       setIsMeetingOpen(true);
       try {
         const spec = await generateSpecFromNotes({
-          chatId: existingChatId,
+          chatId: activeChatId,
           modelId: specModelId,
           notes: notesOverride ?? docContent,
         });
@@ -171,7 +233,7 @@ export function ProjectView({
           setIsReviewing(true);
           try {
             const { annotatedSpec, explanation } = await reviewSpecWithGlm({
-              chatId: existingChatId,
+              chatId: activeChatId,
               spec,
             });
             setDocContent(annotatedSpec);
@@ -196,11 +258,11 @@ export function ProjectView({
         setIsGeneratingSpec(false);
       }
     },
-    [existingChatId, specModelId, docContent, autoMode, handleAddGlmComment]
+    [activeChatId, specModelId, docContent, autoMode, handleAddGlmComment]
   );
 
   const handleWriteNotes = useCallback(async () => {
-    if (!existingChatId) {
+    if (!activeChatId) {
       toast({
         description: "먼저 좌측에서 대화를 시작해주세요.",
         type: "error",
@@ -211,7 +273,7 @@ export function ProjectView({
     setIsGeneratingNotes(true);
     setIsMeetingOpen(true);
     try {
-      const notes = await generateMeetingNotes({ chatId: existingChatId });
+      const notes = await generateMeetingNotes({ chatId: activeChatId });
       setDocContent(notes);
       setDocMode("edit");
 
@@ -223,7 +285,7 @@ export function ProjectView({
     } finally {
       setIsGeneratingNotes(false);
     }
-  }, [existingChatId, autoMode, handleGenerateSpec]);
+  }, [activeChatId, autoMode, handleGenerateSpec]);
 
   const handleChatFinished = useCallback(
     ({
@@ -264,7 +326,7 @@ export function ProjectView({
   );
 
   const handleReviewClick = useCallback(async () => {
-    if (!existingChatId) {
+    if (!activeChatId) {
       toast({
         description: "먼저 좌측에서 대화를 시작해주세요.",
         type: "error",
@@ -275,7 +337,7 @@ export function ProjectView({
     setIsReviewing(true);
     try {
       const { annotatedSpec, explanation } = await reviewSpecWithGlm({
-        chatId: existingChatId,
+        chatId: activeChatId,
         spec: docContent,
       });
       setDocContent(annotatedSpec);
@@ -290,7 +352,7 @@ export function ProjectView({
     } finally {
       setIsReviewing(false);
     }
-  }, [existingChatId, docContent, handleAddGlmComment]);
+  }, [activeChatId, docContent, handleAddGlmComment]);
 
   const handleGenerateSpecClick = useCallback(() => {
     handleGenerateSpec();
@@ -301,9 +363,28 @@ export function ProjectView({
     (isMeetingOpen ? MEETING_PANEL_SIZE : 0) -
     (isGlmOpen ? GLM_PANEL_SIZE : 0);
 
+  if (showOverview) {
+    return (
+      <ProjectOverview
+        chats={chats}
+        onNewChat={handleNewChat}
+        onOpenChat={goToChat}
+        projectName={projectName}
+      />
+    );
+  }
+
   return (
     <div className="flex h-dvh w-full flex-col">
       <div className="flex h-11 shrink-0 items-center gap-3 border-border/40 border-b bg-sidebar px-3">
+        <button
+          className="rounded-md px-2 py-1 font-medium text-[13px] text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground"
+          onClick={handleBackToOverview}
+          type="button"
+        >
+          ← {projectName}
+        </button>
+
         <div className="flex items-center gap-1">
           <TabButton
             isActive={activeTab === "workspace"}
@@ -361,7 +442,7 @@ export function ProjectView({
                 minSize={20}
               >
                 <ActiveChatProvider
-                  chatIdOverride={existingChatId}
+                  chatIdOverride={activeChatId}
                   isGeneratingNotes={isGeneratingNotes}
                   onChatFinished={handleChatFinished}
                   onWriteNotes={handleWriteNotes}

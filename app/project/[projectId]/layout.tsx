@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { Suspense } from "react";
 import { Toaster } from "sonner";
 import { auth } from "@/app/(auth)/auth";
+import { AppShellSkeleton } from "@/components/chat/app-shell-skeleton";
 import { AppSidebar } from "@/components/chat/app-sidebar";
 import { DataStreamProvider } from "@/components/chat/data-stream-provider";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
@@ -9,7 +10,7 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <DataStreamProvider>
-      <Suspense fallback={<div className="flex h-dvh bg-sidebar" />}>
+      <Suspense fallback={<AppShellSkeleton />}>
         <SidebarShell>{children}</SidebarShell>
       </Suspense>
     </DataStreamProvider>
