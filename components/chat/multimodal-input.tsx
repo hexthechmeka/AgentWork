@@ -50,7 +50,7 @@ import {
   type ModelCapabilities,
 } from "@/lib/ai/models";
 import type { Attachment, ChatMessage } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, fetcher } from "@/lib/utils";
 import {
   PromptInput,
   PromptInputFooter,
@@ -130,6 +130,19 @@ function PureMultimodalInput({
   const router = useRouter();
   const { isProjectView, projectId, onWriteNotes, isGeneratingNotes } =
     useActiveChat();
+
+  const { data: usageData } = useSWR<{
+    providers: { provider: string; hardLocked: boolean }[];
+  }>("/api/usage", fetcher, { refreshInterval: 30_000 });
+  const currentUsageProvider = selectedModelId.startsWith("glm/")
+    ? "glm"
+    : "anthropic";
+  const providerHardLocked = Boolean(
+    usageData?.providers?.find((p) => p.provider === currentUsageProvider)
+      ?.hardLocked
+  );
+  const HARD_LOCK_MESSAGE =
+    "한도에 도달하여 메시지를 전송할 수 없습니다. 한도 재설정이 필요합니다.";
   const { setTheme, resolvedTheme } = useTheme();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
@@ -247,6 +260,10 @@ function PureMultimodalInput({
   );
 
   const submitForm = useCallback(() => {
+    if (providerHardLocked) {
+      toast.error(HARD_LOCK_MESSAGE);
+      return;
+    }
     const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
     const newUrl = isProjectView
       ? `${basePath}/project/${projectId}?chat=${chatId}`
@@ -287,6 +304,7 @@ function PureMultimodalInput({
     chatId,
     isProjectView,
     projectId,
+    providerHardLocked,
   ]);
 
   const uploadFile = useCallback(async (file: File) => {
@@ -562,13 +580,22 @@ function PureMultimodalInput({
             ))}
           </div>
         )}
+        {providerHardLocked ? (
+          <div className="mx-3 mt-3 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[12px] text-red-600 dark:text-red-400">
+            {HARD_LOCK_MESSAGE}
+          </div>
+        ) : null}
         <PromptInputTextarea
           className="min-h-24 text-[13px] leading-relaxed px-4 pt-3.5 pb-1.5 placeholder:text-muted-foreground/35"
           data-testid="multimodal-input"
           onChange={handleInput}
           onKeyDown={handleTextareaKeyDown}
           placeholder={
-            editingMessage ? "메시지를 수정하세요..." : "무엇이든 물어보세요..."
+            providerHardLocked
+              ? HARD_LOCK_MESSAGE
+              : editingMessage
+                ? "메시지를 수정하세요..."
+                : "무엇이든 물어보세요..."
           }
           ref={textareaRef}
           value={input}
@@ -613,7 +640,9 @@ function PureMultimodalInput({
                   : "bg-muted text-muted-foreground/25 cursor-not-allowed"
               )}
               data-testid="send-button"
-              disabled={!input.trim() || uploadQueue.length > 0}
+              disabled={
+                !input.trim() || uploadQueue.length > 0 || providerHardLocked
+              }
               status={status}
               variant="secondary"
             >

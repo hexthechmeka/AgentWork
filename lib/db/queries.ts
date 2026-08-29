@@ -12,6 +12,7 @@ import {
   isNull,
   lt,
   type SQL,
+  sql,
 } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -27,10 +28,12 @@ import {
   document,
   message,
   project,
+  providerLimit,
   type Suggestion,
   stream,
   suggestion,
   type User,
+  usageEvent,
   user,
   vote,
 } from "./schema";
@@ -707,5 +710,220 @@ export async function getStreamIdsByChatId({ chatId }: { chatId: string }) {
     return streamIds.map(({ id }) => id);
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+// ─── Usage tracking & provider limits ──────────────────────────────────────
+
+const USAGE_PROVIDERS = ["anthropic", "glm"] as const;
+export type UsageProvider = (typeof USAGE_PROVIDERS)[number];
+
+export async function recordUsageEvent({
+  userId,
+  provider,
+  modelId,
+  inputTokens,
+  outputTokens,
+  cachedInputTokens,
+  costUsd,
+}: {
+  userId: string;
+  provider: UsageProvider;
+  modelId: string;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  costUsd: number;
+}) {
+  try {
+    await db.insert(usageEvent).values({
+      cachedInputTokens: Math.round(cachedInputTokens),
+      costUsd: costUsd.toFixed(8),
+      inputTokens: Math.round(inputTokens),
+      modelId,
+      outputTokens: Math.round(outputTokens),
+      provider,
+      userId,
+    });
+  } catch (error) {
+    // Usage logging must never break a chat turn.
+    console.error("recordUsageEvent failed:", error);
+  }
+}
+
+async function ensureProviderLimits(): Promise<void> {
+  await db
+    .insert(providerLimit)
+    .values(USAGE_PROVIDERS.map((provider) => ({ provider })))
+    .onConflictDoNothing();
+}
+
+export async function getProviderLimits() {
+  await ensureProviderLimits();
+  return db.select().from(providerLimit);
+}
+
+export async function setProviderLimit({
+  provider,
+  softLimitUsd,
+  hardLimitUsd,
+}: {
+  provider: UsageProvider;
+  softLimitUsd: number | null;
+  hardLimitUsd: number | null;
+}) {
+  await ensureProviderLimits();
+  await db
+    .update(providerLimit)
+    .set({
+      hardLimitUsd: hardLimitUsd === null ? null : hardLimitUsd.toFixed(2),
+      softLimitUsd: softLimitUsd === null ? null : softLimitUsd.toFixed(2),
+      updatedAt: new Date(),
+    })
+    .where(eq(providerLimit.provider, provider));
+}
+
+export async function resetProviderPeriod({
+  provider,
+}: {
+  provider: UsageProvider;
+}) {
+  await ensureProviderLimits();
+  await db
+    .update(providerLimit)
+    .set({ periodStart: new Date(), updatedAt: new Date() })
+    .where(eq(providerLimit.provider, provider));
+}
+
+/** Total USD cost for one provider since its current period start. */
+export async function getProviderPeriodCost({
+  userId,
+  provider,
+  periodStart,
+}: {
+  userId: string;
+  provider: UsageProvider;
+  periodStart: Date;
+}): Promise<number> {
+  const [row] = await db
+    .select({ total: sql<string>`coalesce(sum(${usageEvent.costUsd}), 0)` })
+    .from(usageEvent)
+    .where(
+      and(
+        eq(usageEvent.userId, userId),
+        eq(usageEvent.provider, provider),
+        gte(usageEvent.createdAt, periodStart)
+      )
+    );
+  return Number(row?.total ?? 0);
+}
+
+/**
+ * Per-provider usage since period start: token totals, cost, the derived
+ * hard-lock flag, and a daily cost series for the sparkline.
+ */
+export async function getUsageSummary({ userId }: { userId: string }) {
+  const limits = await getProviderLimits();
+
+  const perProvider = await Promise.all(
+    limits.map(async (limit) => {
+      const { periodStart } = limit;
+      const provider = limit.provider as UsageProvider;
+
+      const [totals] = await db
+        .select({
+          cachedInputTokens: sql<string>`coalesce(sum(${usageEvent.cachedInputTokens}), 0)`,
+          costUsd: sql<string>`coalesce(sum(${usageEvent.costUsd}), 0)`,
+          inputTokens: sql<string>`coalesce(sum(${usageEvent.inputTokens}), 0)`,
+          outputTokens: sql<string>`coalesce(sum(${usageEvent.outputTokens}), 0)`,
+        })
+        .from(usageEvent)
+        .where(
+          and(
+            eq(usageEvent.userId, userId),
+            eq(usageEvent.provider, provider),
+            gte(usageEvent.createdAt, periodStart)
+          )
+        );
+
+      const seriesRows = await db
+        .select({
+          cost: sql<string>`coalesce(sum(${usageEvent.costUsd}), 0)`,
+          day: sql<string>`to_char(date_trunc('day', ${usageEvent.createdAt}), 'YYYY-MM-DD')`,
+        })
+        .from(usageEvent)
+        .where(
+          and(
+            eq(usageEvent.userId, userId),
+            eq(usageEvent.provider, provider),
+            gte(usageEvent.createdAt, sql`now() - interval '13 days'`)
+          )
+        )
+        .groupBy(sql`date_trunc('day', ${usageEvent.createdAt})`)
+        .orderBy(sql`date_trunc('day', ${usageEvent.createdAt})`);
+
+      const costUsd = Number(totals?.costUsd ?? 0);
+      const hardLimitUsd =
+        limit.hardLimitUsd === null ? null : Number(limit.hardLimitUsd);
+      const softLimitUsd =
+        limit.softLimitUsd === null ? null : Number(limit.softLimitUsd);
+
+      return {
+        cachedInputTokens: Number(totals?.cachedInputTokens ?? 0),
+        costUsd,
+        hardLimitUsd,
+        hardLocked:
+          hardLimitUsd !== null && hardLimitUsd > 0 && costUsd >= hardLimitUsd,
+        inputTokens: Number(totals?.inputTokens ?? 0),
+        outputTokens: Number(totals?.outputTokens ?? 0),
+        periodStart: periodStart.toISOString(),
+        provider,
+        series: seriesRows.map((r) => ({
+          cost: Number(r.cost),
+          day: r.day,
+        })),
+        softExceeded:
+          softLimitUsd !== null && softLimitUsd > 0 && costUsd >= softLimitUsd,
+        softLimitUsd,
+      };
+    })
+  );
+
+  return perProvider;
+}
+
+/** Backstop check used by the chat route before calling a provider. */
+export async function isProviderHardLocked({
+  userId,
+  provider,
+}: {
+  userId: string;
+  provider: UsageProvider;
+}): Promise<boolean> {
+  try {
+    await ensureProviderLimits();
+    const [limit] = await db
+      .select()
+      .from(providerLimit)
+      .where(eq(providerLimit.provider, provider));
+
+    if (!limit || limit.hardLimitUsd === null) {
+      return false;
+    }
+    const hardLimitUsd = Number(limit.hardLimitUsd);
+    if (hardLimitUsd <= 0) {
+      return false;
+    }
+
+    const cost = await getProviderPeriodCost({
+      periodStart: limit.periodStart,
+      provider,
+      userId,
+    });
+    return cost >= hardLimitUsd;
+  } catch (error) {
+    // Fail open — a metering hiccup shouldn't block all chat.
+    console.error("isProviderHardLocked failed:", error);
+    return false;
   }
 }

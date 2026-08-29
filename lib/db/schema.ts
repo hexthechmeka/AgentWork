@@ -2,7 +2,9 @@ import type { InferSelectModel } from "drizzle-orm";
 import {
   boolean,
   foreignKey,
+  integer,
   json,
+  numeric,
   pgTable,
   primaryKey,
   text,
@@ -150,3 +152,37 @@ export const stream = pgTable(
 );
 
 export type Stream = InferSelectModel<typeof stream>;
+
+// One row per LLM call. `costUsd` is computed and frozen at write time from
+// the pricing table, so historical cost stays accurate across price changes.
+export const usageEvent = pgTable("UsageEvent", {
+  cachedInputTokens: integer("cachedInputTokens").notNull().default(0),
+  costUsd: numeric("costUsd", { precision: 14, scale: 8 })
+    .notNull()
+    .default("0"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  id: uuid("id").primaryKey().notNull().defaultRandom(),
+  inputTokens: integer("inputTokens").notNull().default(0),
+  modelId: text("modelId").notNull(),
+  outputTokens: integer("outputTokens").notNull().default(0),
+  provider: varchar("provider", { enum: ["anthropic", "glm"] }).notNull(),
+  userId: uuid("userId")
+    .notNull()
+    .references(() => user.id),
+});
+
+export type UsageEvent = InferSelectModel<typeof usageEvent>;
+
+// One row per provider. Usage/cost for limit checks is counted from
+// `periodStart`; the "한도 리셋" button moves it to now. No auto-reset.
+export const providerLimit = pgTable("ProviderLimit", {
+  hardLimitUsd: numeric("hardLimitUsd", { precision: 12, scale: 2 }),
+  periodStart: timestamp("periodStart").notNull().defaultNow(),
+  provider: varchar("provider", { enum: ["anthropic", "glm"] })
+    .primaryKey()
+    .notNull(),
+  softLimitUsd: numeric("softLimitUsd", { precision: 12, scale: 2 }),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+});
+
+export type ProviderLimit = InferSelectModel<typeof providerLimit>;

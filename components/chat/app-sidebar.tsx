@@ -17,6 +17,7 @@ import {
   SidebarProjects,
 } from "@/components/chat/sidebar-projects";
 import { SidebarUserNav } from "@/components/chat/sidebar-user-nav";
+import { UsageWidget } from "@/components/chat/usage-widget";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -214,6 +215,7 @@ export function AppSidebar({ user }: { user: User | undefined }) {
           <SidebarProjects user={user} />
         </SidebarContent>
         <SidebarFooter className="border-t border-sidebar-border pt-2 pb-3">
+          {user ? <UsageWidget /> : null}
           {user ? <SidebarUserNav user={user} /> : null}
         </SidebarFooter>
         <SidebarRail />
