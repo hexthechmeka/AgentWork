@@ -25,19 +25,19 @@ export const AICHAT_CONFIG = {
 
 /** app-side model id -> served model name (after the `aichat/` prefix). */
 export const AICHAT_MODEL_ID = "aichat/roleplay";
-export const AICHAT_KO_LEXI_MODEL_ID = "aichat/ko-lexi";
+export const AICHAT_NT_KO_MODEL_ID = "aichat/nt-ko";
 
 export const AICHAT_MODELS: ChatModel[] = [
   {
-    description: "Qwen3.5 기반 롤플레이 (기본)",
+    description: "Qwen3.5-9B 기반 롤플레이",
     id: AICHAT_MODEL_ID,
     name: "Roleplay (Qwen)",
     provider: AICHAT_PROVIDER,
   },
   {
-    description: "Ko-Llama-3.1-8B Lexi Uncensored · 한국어 특화",
-    id: AICHAT_KO_LEXI_MODEL_ID,
-    name: "Ko-Lexi (Llama)",
+    description: "Mistral-Nemo 12B · 한국어 롤플레이 특화 (SFT+DPO)",
+    id: AICHAT_NT_KO_MODEL_ID,
+    name: "NT-Ko 12B",
     provider: AICHAT_PROVIDER,
   },
 ];
@@ -46,8 +46,8 @@ export const AICHAT_MODELS: ChatModel[] = [
 // here (same pattern as GLM_KNOWN_CAPABILITIES). Plain chat: no tools /
 // vision / reasoning-effort.
 export const AICHAT_KNOWN_CAPABILITIES: Record<string, ModelCapabilities> = {
-  [AICHAT_KO_LEXI_MODEL_ID]: { reasoning: false, tools: false, vision: false },
   [AICHAT_MODEL_ID]: { reasoning: false, tools: false, vision: false },
+  [AICHAT_NT_KO_MODEL_ID]: { reasoning: false, tools: false, vision: false },
 };
 
 export function isAichatModel(modelId: string): boolean {
