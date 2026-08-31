@@ -7,7 +7,7 @@ import useSWR from "swr";
 import { type HeadroomLevel, headroomLevel } from "@/lib/ai/pricing";
 import { cn, fetcher } from "@/lib/utils";
 
-type ProviderKey = "anthropic" | "glm";
+type ProviderKey = "anthropic" | "glm" | "aichat";
 
 type ProviderUsage = {
   provider: ProviderKey;
@@ -24,6 +24,7 @@ type ProviderUsage = {
 type UsageResponse = { providers: ProviderUsage[] };
 
 const PROVIDER_LABEL: Record<ProviderKey, string> = {
+  aichat: "AIchat",
   anthropic: "Claude",
   glm: "GLM",
 };

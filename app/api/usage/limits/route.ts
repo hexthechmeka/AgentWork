@@ -4,7 +4,7 @@ import { setProviderLimit } from "@/lib/db/queries";
 
 const bodySchema = z.object({
   hardLimitUsd: z.number().nonnegative().nullable(),
-  provider: z.enum(["anthropic", "glm"]),
+  provider: z.enum(["anthropic", "glm", "aichat"]),
   softLimitUsd: z.number().nonnegative().nullable(),
 });
 

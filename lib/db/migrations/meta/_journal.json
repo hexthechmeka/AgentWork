@@ -29,6 +29,13 @@
       "when": 1787986842262,
       "tag": "0003_smiling_spencer_smythe",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788182511338,
+      "tag": "0004_furry_calypso",
+      "breakpoints": true
     }
   ]
 }

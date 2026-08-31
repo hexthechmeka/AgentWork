@@ -21,6 +21,7 @@ import {
   getModelAvailability,
 } from "@/lib/ai/models";
 import {
+  buildPersonaPrompt,
   type RequestHints,
   systemPrompt,
   type UnifiedChatIdentity,
@@ -38,6 +39,7 @@ import {
   getChatById,
   getMessageCountByUserId,
   getMessagesByChatId,
+  getPersonaById,
   getProjectById,
   isProviderHardLocked,
   saveChat,
@@ -178,7 +180,12 @@ export async function POST(request: Request) {
       chatModel = GLM_VISION_MODEL_ID;
     }
 
-    const usageProvider = chatModel.startsWith("glm/") ? "glm" : "anthropic";
+    let usageProvider: "anthropic" | "glm" | "aichat" = "anthropic";
+    if (chatModel.startsWith("glm/")) {
+      usageProvider = "glm";
+    } else if (chatModel.startsWith("aichat/")) {
+      usageProvider = "aichat";
+    }
     if (
       await isProviderHardLocked({
         provider: usageProvider,
@@ -306,6 +313,17 @@ export async function POST(request: Request) {
     const supportsTools = capabilities?.tools === true;
 
     const effectiveChatKind = chat?.kind ?? chatKind ?? "planning";
+
+    const personaRow = chat?.personaId
+      ? await getPersonaById({ id: chat.personaId })
+      : null;
+    const personaPrompt = personaRow
+      ? buildPersonaPrompt({
+          personality: personaRow.personality,
+          scenario: personaRow.scenario,
+        })
+      : undefined;
+
     const currentProvider = chatModel.startsWith("glm/") ? "GLM" : "Claude";
     const identity: UnifiedChatIdentity | undefined =
       effectiveChatKind === "unified"
@@ -395,7 +413,12 @@ export async function POST(request: Request) {
                   "updateDocument",
                   "requestSuggestions",
                 ],
-          instructions: systemPrompt({ identity, requestHints, supportsTools }),
+          instructions: systemPrompt({
+            identity,
+            personaPrompt,
+            requestHints,
+            supportsTools,
+          }),
           messages: modelMessages,
           model: getLanguageModel(chatModel),
           onAbort() {
@@ -461,7 +484,25 @@ export async function POST(request: Request) {
 
         (async () => {
           try {
-            const modelUsage = await result.usage;
+            let modelUsage = await result.usage;
+            // The build-phase RunPod (llama.cpp) backend doesn't emit a
+            // streaming usage chunk. Fall back to a rough char/4 estimate so
+            // the widget still shows request volume (cost is $0 anyway).
+            if (
+              usageProvider === "aichat" &&
+              !(modelUsage?.inputTokens || modelUsage?.outputTokens)
+            ) {
+              const outText = await result.text;
+              const inChars = modelMessages.reduce(
+                (n, m) => n + JSON.stringify(m.content).length,
+                0
+              );
+              modelUsage = {
+                ...modelUsage,
+                inputTokens: Math.round(inChars / 4),
+                outputTokens: Math.round(outText.length / 4),
+              };
+            }
             await trackUsage({
               modelId: chatModel,
               usage: modelUsage,

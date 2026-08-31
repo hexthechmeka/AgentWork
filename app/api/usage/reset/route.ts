@@ -3,7 +3,7 @@ import { auth } from "@/app/(auth)/auth";
 import { resetProviderPeriod } from "@/lib/db/queries";
 
 const bodySchema = z.object({
-  provider: z.enum(["anthropic", "glm"]),
+  provider: z.enum(["anthropic", "glm", "aichat"]),
 });
 
 export async function POST(request: Request) {

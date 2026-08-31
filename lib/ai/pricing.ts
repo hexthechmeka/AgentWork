@@ -7,7 +7,7 @@
 // glm-5v-turbo isn't in Z.AI's public price list — we use the current-gen
 // vision rate (GLM-4.6V) as the estimate.
 
-export type UsageProvider = "anthropic" | "glm";
+export type UsageProvider = "anthropic" | "glm" | "aichat";
 
 export type ModelRate = {
   /** USD per 1M input tokens */
@@ -21,6 +21,14 @@ export type ModelRate = {
 };
 
 export const MODEL_PRICING: Record<string, ModelRate> = {
+  // Self-hosted RunPod endpoint — no per-token price. Placeholder 0 until a
+  // hosted provider replaces it; tokens are still recorded.
+  "aichat/roleplay": {
+    cachedInput: 0,
+    estimated: true,
+    input: 0,
+    output: 0,
+  },
   "anthropic/claude-haiku-4-5-20251001": {
     cachedInput: 0.1,
     input: 1,
@@ -44,6 +52,9 @@ export function providerForModel(modelId: string): UsageProvider | null {
   }
   if (modelId.startsWith("glm/")) {
     return "glm";
+  }
+  if (modelId.startsWith("aichat/")) {
+    return "aichat";
   }
   return null;
 }

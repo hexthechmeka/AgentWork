@@ -1,3 +1,5 @@
+import { AICHAT_KNOWN_CAPABILITIES, AICHAT_MODELS } from "./aichat-provider";
+
 export const DEFAULT_CHAT_MODEL = "anthropic/claude-sonnet-5";
 
 export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
@@ -86,6 +88,7 @@ export const chatModels: ChatModel[] = [
     name: "GLM Vision",
     provider: "glm",
   },
+  ...AICHAT_MODELS,
 ];
 
 // GLM models aren't registered in the Vercel AI Gateway (we call the GLM
@@ -102,8 +105,10 @@ export async function getCapabilities(): Promise<
 > {
   const results = await Promise.all(
     chatModels.map(async (model) => {
-      if (GLM_KNOWN_CAPABILITIES[model.id]) {
-        return [model.id, GLM_KNOWN_CAPABILITIES[model.id]];
+      const known =
+        GLM_KNOWN_CAPABILITIES[model.id] ?? AICHAT_KNOWN_CAPABILITIES[model.id];
+      if (known) {
+        return [model.id, known];
       }
 
       try {

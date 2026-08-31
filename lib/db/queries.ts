@@ -27,6 +27,8 @@ import {
   type DBMessage,
   document,
   message,
+  type Persona,
+  persona,
   project,
   providerLimit,
   type Suggestion,
@@ -161,7 +163,13 @@ export async function getUnclassifiedChatsByUserId({
     return await db
       .select()
       .from(chat)
-      .where(and(eq(chat.userId, userId), isNull(chat.projectId)))
+      .where(
+        and(
+          eq(chat.userId, userId),
+          isNull(chat.projectId),
+          isNull(chat.personaId)
+        )
+      )
       .orderBy(desc(chat.createdAt));
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
@@ -715,7 +723,7 @@ export async function getStreamIdsByChatId({ chatId }: { chatId: string }) {
 
 // ─── Usage tracking & provider limits ──────────────────────────────────────
 
-const USAGE_PROVIDERS = ["anthropic", "glm"] as const;
+const USAGE_PROVIDERS = ["anthropic", "glm", "aichat"] as const;
 export type UsageProvider = (typeof USAGE_PROVIDERS)[number];
 
 export async function recordUsageEvent({
@@ -905,5 +913,184 @@ export async function isProviderHardLocked({
     // Fail open — a metering hiccup shouldn't block all chat.
     console.error("isProviderHardLocked failed:", error);
     return false;
+  }
+}
+
+// ─── AIchat: personas ─────────────────────────────────────────────────────
+
+type PersonaInput = {
+  name: string;
+  personality: string;
+  defaultModel: string;
+  avatarUrl?: string | null;
+  tagline?: string | null;
+  openingMessage?: string | null;
+  scenario?: string | null;
+  tags?: string[];
+};
+
+export async function createPersona({
+  ownerId,
+  ...input
+}: PersonaInput & { ownerId: string }) {
+  try {
+    const [created] = await db
+      .insert(persona)
+      .values({
+        avatarUrl: input.avatarUrl ?? null,
+        defaultModel: input.defaultModel,
+        name: input.name,
+        openingMessage: input.openingMessage ?? null,
+        ownerId,
+        personality: input.personality,
+        scenario: input.scenario ?? null,
+        tagline: input.tagline ?? null,
+        tags: input.tags ?? [],
+      })
+      .returning();
+    return created;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function getPersonasByOwnerId({
+  ownerId,
+}: {
+  ownerId: string;
+}): Promise<Persona[]> {
+  try {
+    return await db
+      .select()
+      .from(persona)
+      .where(eq(persona.ownerId, ownerId))
+      .orderBy(desc(persona.updatedAt));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function getPersonaById({
+  id,
+}: {
+  id: string;
+}): Promise<Persona | null> {
+  try {
+    const [row] = await db.select().from(persona).where(eq(persona.id, id));
+    return row ?? null;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function updatePersona({
+  id,
+  ownerId,
+  ...input
+}: Partial<PersonaInput> & { id: string; ownerId: string }) {
+  try {
+    const [updated] = await db
+      .update(persona)
+      .set({
+        ...(input.name !== undefined && { name: input.name }),
+        ...(input.personality !== undefined && {
+          personality: input.personality,
+        }),
+        ...(input.defaultModel !== undefined && {
+          defaultModel: input.defaultModel,
+        }),
+        ...(input.avatarUrl !== undefined && { avatarUrl: input.avatarUrl }),
+        ...(input.tagline !== undefined && { tagline: input.tagline }),
+        ...(input.openingMessage !== undefined && {
+          openingMessage: input.openingMessage,
+        }),
+        ...(input.scenario !== undefined && { scenario: input.scenario }),
+        ...(input.tags !== undefined && { tags: input.tags }),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(persona.id, id), eq(persona.ownerId, ownerId)))
+      .returning();
+    return updated ?? null;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function deletePersona({
+  id,
+  ownerId,
+}: {
+  id: string;
+  ownerId: string;
+}) {
+  try {
+    // Chat.personaId is ON DELETE SET NULL, so past chats survive detached.
+    await db
+      .delete(persona)
+      .where(and(eq(persona.id, id), eq(persona.ownerId, ownerId)));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/** Persona chats for the sidebar, newest first, with their persona name. */
+export async function getPersonaChatsByOwnerId({ userId }: { userId: string }) {
+  try {
+    return await db
+      .select({
+        createdAt: chat.createdAt,
+        id: chat.id,
+        personaId: chat.personaId,
+        title: chat.title,
+        visibility: chat.visibility,
+      })
+      .from(chat)
+      .where(and(eq(chat.userId, userId), eq(chat.kind, "persona")))
+      .orderBy(desc(chat.createdAt));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/**
+ * Start a fresh chat with a persona: creates the Chat row and, when the
+ * persona has an openingMessage, seeds it as the first assistant turn (no
+ * model call). Returns the new chat id.
+ */
+export async function startPersonaChat({
+  personaRow,
+  userId,
+}: {
+  personaRow: Persona;
+  userId: string;
+}): Promise<string> {
+  try {
+    const chatId = generateUUID();
+    await db.insert(chat).values({
+      createdAt: new Date(),
+      id: chatId,
+      kind: "persona",
+      personaId: personaRow.id,
+      projectId: null,
+      title: personaRow.name,
+      userId,
+      visibility: "private",
+    });
+
+    if (personaRow.openingMessage?.trim()) {
+      await db.insert(message).values({
+        attachments: [],
+        chatId,
+        createdAt: new Date(),
+        id: generateUUID(),
+        modelId: personaRow.defaultModel,
+        parts: [{ text: personaRow.openingMessage, type: "text" }],
+        role: "assistant",
+      });
+    }
+
+    return chatId;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
   }
 }

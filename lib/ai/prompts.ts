@@ -72,12 +72,22 @@ export const systemPrompt = ({
   requestHints,
   supportsTools,
   identity,
+  personaPrompt,
 }: {
   requestHints: RequestHints;
   supportsTools: boolean;
   identity?: UnifiedChatIdentity;
+  /** AIchat: persona instructions, used verbatim in place of the default. */
+  personaPrompt?: string;
 }) => {
   const requestPrompt = getRequestPromptFromHints(requestHints);
+
+  // A persona chat is roleplay: the persona's instructions replace the
+  // assistant framing entirely (no artifacts, no "be concise").
+  if (personaPrompt) {
+    return `${personaPrompt}\n\n${requestPrompt}`;
+  }
+
   const identityPrompt = identity
     ? `\n\n너는 ${identity.self}야. 이 대화엔 다른 AI(${identity.other})도 같이 참여하고 있고, 히스토리의 [${identity.other}] 태그가 상대방 발언이야.`
     : "";
@@ -88,6 +98,16 @@ export const systemPrompt = ({
 
   return `${regularPrompt}${identityPrompt}\n\n${requestPrompt}\n\n${artifactsPrompt}`;
 };
+
+/** Build the persona system prompt from its fields. */
+export const buildPersonaPrompt = ({
+  personality,
+  scenario,
+}: {
+  personality: string;
+  scenario?: string | null;
+}) =>
+  scenario?.trim() ? `${personality}\n\n## 상황\n${scenario}` : personality;
 
 export const codePrompt = `
 You are a code generator that creates self-contained, executable code snippets. When writing code:

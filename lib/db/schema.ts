@@ -38,12 +38,37 @@ export const project = pgTable("Project", {
 
 export type Project = InferSelectModel<typeof project>;
 
+// AIchat: a persona (character) the user chats with. Single-user app — no
+// view counts / ranking fields. `personality` is used verbatim as the system
+// prompt; `openingMessage` is seeded as the first assistant turn.
+export const persona = pgTable("Persona", {
+  avatarUrl: text("avatarUrl"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  defaultModel: text("defaultModel").notNull(),
+  id: uuid("id").primaryKey().notNull().defaultRandom(),
+  name: text("name").notNull(),
+  openingMessage: text("openingMessage"),
+  ownerId: uuid("ownerId")
+    .notNull()
+    .references(() => user.id),
+  personality: text("personality").notNull(),
+  scenario: text("scenario"),
+  tagline: text("tagline"),
+  tags: text("tags").array().notNull().default([]),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+});
+
+export type Persona = InferSelectModel<typeof persona>;
+
 export const chat = pgTable("Chat", {
   createdAt: timestamp("createdAt").notNull(),
   id: uuid("id").primaryKey().notNull().defaultRandom(),
-  kind: varchar("kind", { enum: ["planning", "unified"] })
+  kind: varchar("kind", { enum: ["planning", "unified", "persona"] })
     .notNull()
     .default("planning"),
+  personaId: uuid("personaId").references(() => persona.id, {
+    onDelete: "set null",
+  }),
   projectId: uuid("projectId").references(() => project.id),
   title: text("title").notNull(),
   userId: uuid("userId")
@@ -165,7 +190,9 @@ export const usageEvent = pgTable("UsageEvent", {
   inputTokens: integer("inputTokens").notNull().default(0),
   modelId: text("modelId").notNull(),
   outputTokens: integer("outputTokens").notNull().default(0),
-  provider: varchar("provider", { enum: ["anthropic", "glm"] }).notNull(),
+  provider: varchar("provider", {
+    enum: ["anthropic", "glm", "aichat"],
+  }).notNull(),
   userId: uuid("userId")
     .notNull()
     .references(() => user.id),
@@ -178,7 +205,7 @@ export type UsageEvent = InferSelectModel<typeof usageEvent>;
 export const providerLimit = pgTable("ProviderLimit", {
   hardLimitUsd: numeric("hardLimitUsd", { precision: 12, scale: 2 }),
   periodStart: timestamp("periodStart").notNull().defaultNow(),
-  provider: varchar("provider", { enum: ["anthropic", "glm"] })
+  provider: varchar("provider", { enum: ["anthropic", "glm", "aichat"] })
     .primaryKey()
     .notNull(),
   softLimitUsd: numeric("softLimitUsd", { precision: 12, scale: 2 }),

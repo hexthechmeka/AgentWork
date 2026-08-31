@@ -2,6 +2,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { customProvider } from "ai";
 import { isTestEnvironment } from "../constants";
+import { AICHAT_CONFIG, AICHAT_PROVIDER } from "./aichat-provider";
 import { titleModel } from "./models";
 
 export const myProvider = isTestEnvironment
@@ -67,6 +68,14 @@ const glm = createOpenAICompatible({
   name: "glm",
 });
 
+const aichat = createOpenAICompatible({
+  apiKey: AICHAT_CONFIG.apiKey,
+  baseURL: AICHAT_CONFIG.baseURL,
+  // llama.cpp only emits a final usage chunk when asked (stream_options).
+  includeUsage: true,
+  name: AICHAT_PROVIDER,
+});
+
 function resolveDirectModel(modelId: string) {
   if (modelId.startsWith("anthropic/")) {
     return anthropic(modelId.slice("anthropic/".length));
@@ -74,6 +83,10 @@ function resolveDirectModel(modelId: string) {
 
   if (modelId.startsWith("glm/")) {
     return glm(modelId.slice("glm/".length));
+  }
+
+  if (modelId.startsWith(`${AICHAT_PROVIDER}/`)) {
+    return aichat(modelId.slice(`${AICHAT_PROVIDER}/`.length));
   }
 
   throw new Error(`Unsupported model id: ${modelId}`);

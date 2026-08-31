@@ -12,6 +12,7 @@ import type { User } from "next-auth";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
+import { SidebarAichat } from "@/components/chat/sidebar-aichat";
 import {
   getProjectsKey,
   SidebarProjects,
@@ -213,6 +214,7 @@ export function AppSidebar({ user }: { user: User | undefined }) {
             </SidebarGroupContent>
           </SidebarGroup>
           <SidebarProjects user={user} />
+          <SidebarAichat user={user} />
         </SidebarContent>
         <SidebarFooter className="border-t border-sidebar-border pt-2 pb-3">
           {user ? <UsageWidget /> : null}

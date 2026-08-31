@@ -134,9 +134,12 @@ function PureMultimodalInput({
   const { data: usageData } = useSWR<{
     providers: { provider: string; hardLocked: boolean }[];
   }>("/api/usage", fetcher, { refreshInterval: 30_000 });
-  const currentUsageProvider = selectedModelId.startsWith("glm/")
-    ? "glm"
-    : "anthropic";
+  let currentUsageProvider = "anthropic";
+  if (selectedModelId.startsWith("glm/")) {
+    currentUsageProvider = "glm";
+  } else if (selectedModelId.startsWith("aichat/")) {
+    currentUsageProvider = "aichat";
+  }
   const providerHardLocked = Boolean(
     usageData?.providers?.find((p) => p.provider === currentUsageProvider)
       ?.hardLocked
