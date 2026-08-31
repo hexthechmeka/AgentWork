@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useSWRConfig } from "swr";
+import { getAichatKey } from "@/components/aichat/aichat-sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { chatModels } from "@/lib/ai/models";
@@ -58,6 +60,7 @@ const selectClass =
 
 export function PersonaForm({ initial }: { initial: PersonaFormValues }) {
   const router = useRouter();
+  const { mutate } = useSWRConfig();
   const isEdit = Boolean(initial.id);
   const [values, setValues] = useState<PersonaFormValues>(initial);
   const [saving, setSaving] = useState(false);
@@ -146,15 +149,15 @@ export function PersonaForm({ initial }: { initial: PersonaFormValues }) {
           throw new Error("save failed");
         }
         toast.success(isEdit ? "저장되었습니다" : "캐릭터가 생성되었습니다");
+        await mutate(getAichatKey());
         router.push("/aichat");
-        router.refresh();
       } catch {
         toast.error("저장에 실패했습니다");
       } finally {
         setSaving(false);
       }
     },
-    [values, isEdit, initial.id, router]
+    [values, isEdit, initial.id, router, mutate]
   );
 
   let submitLabel = "생성";
