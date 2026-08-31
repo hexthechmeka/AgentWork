@@ -23,9 +23,47 @@ const anthropic = createAnthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+async function loggingGlmFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response> {
+  if (typeof init?.body === "string") {
+    try {
+      const body = JSON.parse(init.body);
+      console.log(
+        "GLM request:",
+        JSON.stringify(
+          {
+            messageCount: Array.isArray(body.messages)
+              ? body.messages.length
+              : undefined,
+            messages: body.messages,
+            model: body.model,
+            reasoning_effort: body.reasoning_effort,
+          },
+          null,
+          2
+        )
+      );
+    } catch (error) {
+      console.error("GLM request logging failed to parse body:", error);
+    }
+  }
+
+  const response = await fetch(input, init);
+
+  if (!response.ok) {
+    const bodyText = await response.clone().text();
+    console.error("GLM API returned an error:", response.status, bodyText);
+  }
+
+  return response;
+}
+
 const glm = createOpenAICompatible({
   apiKey: process.env.GLM_API_KEY,
   baseURL: "https://open.bigmodel.cn/api/paas/v4",
+  fetch: loggingGlmFetch,
   name: "glm",
 });
 

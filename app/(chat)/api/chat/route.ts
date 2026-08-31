@@ -61,6 +61,46 @@ function isModelStreamActivity(chunk: { type: string }) {
   );
 }
 
+// GLM-5.3/5.2 (non-vision) can't accept image content at all. If an earlier
+// turn in this chat attached an image (e.g. answered by the vision model),
+// the AI SDK's OpenAI-compatible message conversion still unconditionally
+// serializes that historical file part into an `image_url` content block —
+// regardless of whether the *current* target model supports vision — which
+// GLM's non-vision endpoint chokes on (observed as silent empty responses).
+// Replace historical image parts with a text placeholder before building
+// model messages for a non-vision GLM call.
+function stripImagePartsForNonVisionGlm(
+  messages: ChatMessage[],
+  chatModel: string
+): ChatMessage[] {
+  const isNonVisionGlm =
+    chatModel.startsWith("glm/") && chatModel !== GLM_VISION_MODEL_ID;
+  if (!isNonVisionGlm) {
+    return messages;
+  }
+
+  return messages.map((msg) => {
+    if (!msg.parts?.some((part) => part.type === "file")) {
+      return msg;
+    }
+    return {
+      ...msg,
+      parts: msg.parts.map((part) => {
+        if (part.type !== "file") {
+          return part;
+        }
+        const filename =
+          (part as { filename?: string; name?: string }).filename ??
+          (part as { name?: string }).name;
+        return {
+          text: `[이미지 첨부됨${filename ? `: ${filename}` : ""}]`,
+          type: "text" as const,
+        };
+      }),
+    };
+  });
+}
+
 function tagAssistantMessagesForUnifiedChat(
   messages: ChatMessage[]
 ): ChatMessage[] {
@@ -263,9 +303,11 @@ export async function POST(request: Request) {
           }
         : undefined;
 
-    const modelMessages = await convertToModelMessages(
-      identity ? tagAssistantMessagesForUnifiedChat(uiMessages) : uiMessages
+    const messagesForModel = stripImagePartsForNonVisionGlm(
+      identity ? tagAssistantMessagesForUnifiedChat(uiMessages) : uiMessages,
+      chatModel
     );
+    const modelMessages = await convertToModelMessages(messagesForModel);
 
     const stream = createUIMessageStream({
       execute: async ({ writer: dataStream }) => {
@@ -355,8 +397,9 @@ export async function POST(request: Request) {
           onEnd() {
             stopWaitingStatus();
           },
-          onError() {
+          onError({ error }) {
             stopWaitingStatus();
+            console.error("streamText error:", chatModel, error);
           },
           providerOptions: {
             ...(modelConfig?.reasoningEffort && {
@@ -461,6 +504,7 @@ export async function POST(request: Request) {
         }
       },
       onError: (error) => {
+        console.error("Chat UI message stream error:", chatModel, error);
         if (
           error instanceof Error &&
           error.message?.includes(
