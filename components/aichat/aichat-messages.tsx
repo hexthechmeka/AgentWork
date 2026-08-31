@@ -162,6 +162,22 @@ function stripMeta(text: string): string {
   return out.trim();
 }
 
+// Strip leftover markup the model sometimes emits: [DEV] tags and fragments,
+// empty / short bracketed spans, stray square brackets, and chat-template or
+// pseudo-HTML tokens (<|...|>, <br>, </i>, <|eot_id|> …).
+function stripArtifacts(text: string): string {
+  return text
+    .replace(/\[dev\][\s\S]*?\[\/dev\]/gi, "") // whole [DEV] … [/DEV] block
+    .replace(/\[\s*\/?\s*dev\s*\]/gi, "") // stray/unclosed [DEV] or [/DEV]
+    .replace(/<[/|]?[a-z0-9_ |]{0,24}>/gi, "") // <|br> </i> <|eot_id|> <|i| >
+    .replace(/\[\s*\]/g, "") // empty [ ]
+    .replace(/[[\]]/g, "") // strip stray brackets, keep the text between
+    .replace(/\s\|\s/g, " ") // orphan pipe
+    .replace(/[^\S\n]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function CharacterMessage({
   text,
   persona,
@@ -173,7 +189,7 @@ function CharacterMessage({
   onReroll?: () => void;
   busy?: boolean;
 }) {
-  const cleaned = stripMeta(text) || text;
+  const cleaned = stripArtifacts(stripMeta(text)) || text;
   const segments = parseRoleplay(cleaned);
   const blocks =
     segments.length > 0
