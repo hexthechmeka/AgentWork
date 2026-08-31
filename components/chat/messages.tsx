@@ -19,6 +19,8 @@ type MessagesProps = {
   isLoading?: boolean;
   selectedModelId: string;
   onEditMessage?: (message: ChatMessage) => void;
+  /** Replaces the default "무엇을 도와드릴까요?" empty state. */
+  greeting?: React.ReactNode;
 };
 
 function PureMessages({
@@ -32,6 +34,7 @@ function PureMessages({
   isLoading,
   selectedModelId: _selectedModelId,
   onEditMessage,
+  greeting,
 }: MessagesProps) {
   const {
     containerRef: messagesContainerRef,
@@ -62,7 +65,7 @@ function PureMessages({
     <div className="relative flex-1 bg-background">
       {messages.length === 0 && !isLoading && (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
-          <Greeting />
+          {greeting ?? <Greeting />}
         </div>
       )}
       <div

@@ -1,5 +1,6 @@
 "use client";
 
+import { formatDistanceToNow } from "date-fns";
 import {
   ArrowLeftIcon,
   MessageSquarePlusIcon,
@@ -47,6 +48,9 @@ type PersonaChatRow = {
   title: string;
   personaId: string | null;
   createdAt: string;
+  lastMessage: string;
+  lastMessageAt: string;
+  lastRole: string | null;
 };
 type AichatResponse = { personas: Persona[]; chats: PersonaChatRow[] };
 
@@ -85,11 +89,13 @@ function Avatar({ persona, size = 26 }: { persona?: Persona; size?: number }) {
 
 function ChatRow({
   chat,
+  persona,
   active,
   onOpen,
   onDelete,
 }: {
   chat: PersonaChatRow;
+  persona: Persona;
   active: boolean;
   onOpen: (chatId: string) => void;
   onDelete: (chat: PersonaChatRow) => void;
@@ -102,19 +108,40 @@ function ChatRow({
     },
     [chat, onDelete]
   );
+
+  const when = formatDistanceToNow(new Date(chat.lastMessageAt), {
+    addSuffix: true,
+  });
+  const preview = chat.lastMessage
+    ? `${chat.lastRole === "user" ? "나: " : ""}${chat.lastMessage}`
+    : "새 대화";
+
   return (
     <div
       className={cn(
-        "group/chat flex items-center gap-1 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-accent",
+        "group/chat flex items-start gap-2 rounded-lg px-2 py-2 transition-colors hover:bg-accent",
         active && "bg-accent"
       )}
     >
       <button
-        className="min-w-0 flex-1 truncate text-foreground/90"
+        className="flex min-w-0 flex-1 items-start gap-2 text-left"
         onClick={open}
         type="button"
       >
-        {chat.title}
+        <Avatar persona={persona} size={32} />
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="flex items-baseline justify-between gap-2">
+            <span className="truncate font-medium text-[13px] text-foreground">
+              {persona.name}
+            </span>
+            <span className="shrink-0 text-[10px] text-muted-foreground">
+              {when}
+            </span>
+          </span>
+          <span className="line-clamp-2 text-[12px] text-muted-foreground">
+            {preview}
+          </span>
+        </span>
       </button>
       <button
         aria-label="대화 삭제"
@@ -166,31 +193,44 @@ function PersonaEntry({
             ) : null}
           </SidebarMenuButton>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-64 p-1.5" side="right">
-          <div className="flex items-center justify-between px-1.5 py-1">
-            <span className="truncate font-medium text-[13px] text-foreground">
-              {persona.name}
+        <PopoverContent
+          align="start"
+          className="flex w-[24rem] max-w-[90vw] flex-col p-2"
+          side="right"
+        >
+          <div className="flex items-center gap-2.5 px-1 pb-2">
+            <Avatar persona={persona} size={40} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-semibold text-[15px] text-foreground">
+                {persona.name}
+              </span>
+              {persona.tagline ? (
+                <span className="block truncate text-[12px] text-muted-foreground">
+                  {persona.tagline}
+                </span>
+              ) : null}
             </span>
             <Link
-              className="rounded p-1 text-muted-foreground hover:text-foreground"
+              aria-label="캐릭터 수정"
+              className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
               href={`/aichat/${persona.id}/edit`}
             >
-              <PencilIcon className="size-3" />
+              <PencilIcon className="size-3.5" />
             </Link>
           </div>
 
           <button
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+            className="flex w-full items-center gap-2 rounded-md border border-border/60 px-2 py-2 text-left text-[13px] text-foreground transition-colors hover:bg-accent disabled:opacity-50"
             disabled={starting}
             onClick={startNew}
             type="button"
           >
-            <MessageSquarePlusIcon className="size-3.5" />새 대화
+            <MessageSquarePlusIcon className="size-4" />새 대화 시작
           </button>
 
-          <div className="mt-1 flex max-h-72 flex-col gap-0.5 overflow-y-auto border-border/60 border-t pt-1">
+          <div className="mt-2 flex max-h-[26rem] flex-col gap-0.5 overflow-y-auto border-border/60 border-t pt-2">
             {chats.length === 0 ? (
-              <p className="px-2 py-2 text-[12px] text-muted-foreground">
+              <p className="px-2 py-4 text-center text-[12px] text-muted-foreground">
                 아직 대화가 없습니다.
               </p>
             ) : (
@@ -201,6 +241,7 @@ function PersonaEntry({
                   key={chat.id}
                   onDelete={onDelete}
                   onOpen={onOpen}
+                  persona={persona}
                 />
               ))
             )}

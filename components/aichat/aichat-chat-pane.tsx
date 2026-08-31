@@ -143,6 +143,28 @@ export function AichatChatPane() {
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         <Messages
           chatId={chatId}
+          greeting={
+            <div className="flex flex-col items-center gap-3 px-4 text-center">
+              <span className="flex size-14 items-center justify-center overflow-hidden rounded-full border border-border bg-muted text-[13px] text-muted-foreground">
+                {persona?.avatarUrl ? (
+                  // biome-ignore lint/performance/noImgElement: user-uploaded blob avatar
+                  <img
+                    alt=""
+                    className="size-full object-cover"
+                    src={persona.avatarUrl}
+                  />
+                ) : (
+                  (persona?.name ?? "AI").slice(0, 2)
+                )}
+              </span>
+              <p className="font-semibold text-foreground text-lg">
+                {persona?.name ?? "AIchat"}
+              </p>
+              <p className="text-[13px] text-muted-foreground">
+                {persona?.tagline ?? "메시지를 보내 대화를 시작하세요."}
+              </p>
+            </div>
+          }
           isArtifactVisible={false}
           isLoading={isLoading}
           isReadonly={isReadonly}

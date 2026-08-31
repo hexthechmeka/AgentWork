@@ -1076,10 +1076,30 @@ export async function getLatestPersonaChat({
   }
 }
 
-/** Persona chats for the sidebar, newest first, with their persona name. */
+function textFromParts(parts: unknown): string {
+  if (!Array.isArray(parts)) {
+    return "";
+  }
+  return parts
+    .filter(
+      (p): p is { type: string; text: string } =>
+        typeof p === "object" &&
+        p !== null &&
+        (p as { type?: string }).type === "text"
+    )
+    .map((p) => p.text)
+    .join(" ")
+    .trim();
+}
+
+/**
+ * Persona chats for the sidebar popover, newest first, each with a preview
+ * of its most recent message so threads with the same title are
+ * distinguishable.
+ */
 export async function getPersonaChatsByOwnerId({ userId }: { userId: string }) {
   try {
-    return await db
+    const rows = await db
       .select({
         createdAt: chat.createdAt,
         id: chat.id,
@@ -1090,6 +1110,29 @@ export async function getPersonaChatsByOwnerId({ userId }: { userId: string }) {
       .from(chat)
       .where(and(eq(chat.userId, userId), eq(chat.kind, "persona")))
       .orderBy(desc(chat.createdAt));
+
+    return await Promise.all(
+      rows.map(async (row) => {
+        const [last] = await db
+          .select({
+            createdAt: message.createdAt,
+            parts: message.parts,
+            role: message.role,
+          })
+          .from(message)
+          .where(eq(message.chatId, row.id))
+          .orderBy(desc(message.createdAt))
+          .limit(1);
+
+        const text = last ? textFromParts(last.parts) : "";
+        return {
+          ...row,
+          lastMessage: text.slice(0, 140),
+          lastMessageAt: (last?.createdAt ?? row.createdAt).toISOString(),
+          lastRole: last?.role ?? null,
+        };
+      })
+    );
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }
