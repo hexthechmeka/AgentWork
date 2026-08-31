@@ -1,29 +1,36 @@
 import { cookies } from "next/headers";
 import { Suspense } from "react";
 import { Toaster } from "sonner";
-import { auth } from "@/app/(auth)/auth";
+import { AichatProviders } from "@/components/aichat/aichat-providers";
+import { AichatSidebar } from "@/components/aichat/aichat-sidebar";
 import { AppShellSkeleton } from "@/components/chat/app-shell-skeleton";
-import { AppSidebar } from "@/components/chat/app-sidebar";
 import { DataStreamProvider } from "@/components/chat/data-stream-provider";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
-export default function Layout({ children }: { children: React.ReactNode }) {
+// AIchat runs in its own shell — a messenger-style sidebar that shows only
+// personas and their chats. The main app sidebar (projects / unclassified)
+// is not mounted here.
+export default function AichatLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <DataStreamProvider>
       <Suspense fallback={<AppShellSkeleton />}>
-        <SidebarShell>{children}</SidebarShell>
+        <AichatShell>{children}</AichatShell>
       </Suspense>
     </DataStreamProvider>
   );
 }
 
-async function SidebarShell({ children }: { children: React.ReactNode }) {
-  const [session, cookieStore] = await Promise.all([auth(), cookies()]);
+async function AichatShell({ children }: { children: React.ReactNode }) {
+  const cookieStore = await cookies();
   const isCollapsed = cookieStore.get("sidebar_state")?.value !== "true";
 
   return (
     <SidebarProvider defaultOpen={!isCollapsed}>
-      <AppSidebar user={session?.user} />
+      <AichatSidebar />
       <SidebarInset>
         <Toaster
           position="top-center"
@@ -33,7 +40,7 @@ async function SidebarShell({ children }: { children: React.ReactNode }) {
               "!bg-card !text-foreground !border-border/50 !shadow-[var(--shadow-float)]",
           }}
         />
-        {children}
+        <AichatProviders>{children}</AichatProviders>
       </SidebarInset>
     </SidebarProvider>
   );

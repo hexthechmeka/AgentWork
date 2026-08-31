@@ -268,9 +268,13 @@ function PureMultimodalInput({
       return;
     }
     const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-    const newUrl = isProjectView
-      ? `${basePath}/project/${projectId}?chat=${chatId}`
-      : `${basePath}/chat/${chatId}${window.location.search}`;
+    const inAichat = window.location.pathname.startsWith(`${basePath}/aichat/`);
+    let newUrl = `${basePath}/chat/${chatId}${window.location.search}`;
+    if (isProjectView) {
+      newUrl = `${basePath}/project/${projectId}?chat=${chatId}`;
+    } else if (inAichat) {
+      newUrl = `${basePath}/aichat/chat/${chatId}`;
+    }
     window.history.pushState({}, "", newUrl);
 
     sendMessage({
