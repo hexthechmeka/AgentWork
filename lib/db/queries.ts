@@ -923,6 +923,7 @@ type PersonaInput = {
   personality: string;
   defaultModel: string;
   avatarUrl?: string | null;
+  panelImageUrl?: string | null;
   tagline?: string | null;
   openingMessage?: string | null;
   scenario?: string | null;
@@ -942,6 +943,7 @@ export async function createPersona({
         name: input.name,
         openingMessage: input.openingMessage ?? null,
         ownerId,
+        panelImageUrl: input.panelImageUrl ?? null,
         personality: input.personality,
         scenario: input.scenario ?? null,
         tagline: input.tagline ?? null,
@@ -1000,6 +1002,9 @@ export async function updatePersona({
           defaultModel: input.defaultModel,
         }),
         ...(input.avatarUrl !== undefined && { avatarUrl: input.avatarUrl }),
+        ...(input.panelImageUrl !== undefined && {
+          panelImageUrl: input.panelImageUrl,
+        }),
         ...(input.tagline !== undefined && { tagline: input.tagline }),
         ...(input.openingMessage !== undefined && {
           openingMessage: input.openingMessage,
@@ -1028,6 +1033,44 @@ export async function deletePersona({
     await db
       .delete(persona)
       .where(and(eq(persona.id, id), eq(persona.ownerId, ownerId)));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/**
+ * The most recent chat with a given persona, plus its last few messages —
+ * for the persona detail screen ("마지막 대화 로그" + 대화 이어하기).
+ */
+export async function getLatestPersonaChat({
+  personaId,
+  userId,
+  messageLimit = 8,
+}: {
+  personaId: string;
+  userId: string;
+  messageLimit?: number;
+}) {
+  try {
+    const [latest] = await db
+      .select({ createdAt: chat.createdAt, id: chat.id, title: chat.title })
+      .from(chat)
+      .where(and(eq(chat.userId, userId), eq(chat.personaId, personaId)))
+      .orderBy(desc(chat.createdAt))
+      .limit(1);
+
+    if (!latest) {
+      return null;
+    }
+
+    const recent = await db
+      .select()
+      .from(message)
+      .where(eq(message.chatId, latest.id))
+      .orderBy(desc(message.createdAt))
+      .limit(messageLimit);
+
+    return { chat: latest, messages: recent.reverse() };
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }

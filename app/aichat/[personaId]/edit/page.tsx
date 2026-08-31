@@ -24,6 +24,7 @@ export default async function EditPersonaPage({
     id: persona.id,
     name: persona.name,
     openingMessage: persona.openingMessage ?? "",
+    panelImageUrl: persona.panelImageUrl ?? "",
     personality: persona.personality,
     scenario: persona.scenario ?? "",
     tagline: persona.tagline ?? "",

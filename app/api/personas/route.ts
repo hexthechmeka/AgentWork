@@ -11,6 +11,7 @@ const createSchema = z.object({
   defaultModel: z.string().min(1),
   name: z.string().min(1).max(120),
   openingMessage: z.string().max(8000).nullish(),
+  panelImageUrl: z.string().url().nullish(),
   personality: z.string().min(1).max(20_000),
   scenario: z.string().max(8000).nullish(),
   tagline: z.string().max(300).nullish(),

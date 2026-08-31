@@ -36,6 +36,13 @@
       "when": 1788182511338,
       "tag": "0004_furry_calypso",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788188369764,
+      "tag": "0005_panoramic_daredevil",
+      "breakpoints": true
     }
   ]
 }

@@ -51,6 +51,9 @@ export const persona = pgTable("Persona", {
   ownerId: uuid("ownerId")
     .notNull()
     .references(() => user.id),
+  // Larger cover art shown on the gallery panel / detail screen (avatarUrl
+  // stays the small round chat/sidebar image).
+  panelImageUrl: text("panelImageUrl"),
   personality: text("personality").notNull(),
   scenario: text("scenario"),
   tagline: text("tagline"),

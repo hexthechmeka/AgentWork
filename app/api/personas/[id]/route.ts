@@ -7,6 +7,7 @@ const patchSchema = z.object({
   defaultModel: z.string().min(1).optional(),
   name: z.string().min(1).max(120).optional(),
   openingMessage: z.string().max(8000).nullish(),
+  panelImageUrl: z.string().url().nullish(),
   personality: z.string().min(1).max(20_000).optional(),
   scenario: z.string().max(8000).nullish(),
   tagline: z.string().max(300).nullish(),
