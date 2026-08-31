@@ -43,23 +43,34 @@ type Segment = { kind: "dialogue" | "narration"; text: string };
 // off a spoken line so the bubble holds just the words.
 const EDGE_QUOTES = /^[\s"“”„‟'‘’「」『』]+|[\s"“”„‟'‘’「」『』]+$/g;
 
-// Narration is delimited by *asterisks* OR ( parentheses ) — some Korean RP
-// models wrap stage directions in parens instead of stars.
-const NARRATION_CLOSER: Record<string, string> = {
+// Opener char -> its closer. Narration is delimited by *asterisks* or
+// ( parentheses ); dialogue by "quotes" (used only in quote mode).
+const NARRATION_OPENER: Record<string, string> = {
   "(": ")",
   "*": "*",
   "（": "）",
 };
+const DIALOGUE_OPENER: Record<string, string> = { '"': '"', "“": "”" };
+// A paired quote wrapping >=2 chars means the model is marking spoken lines
+// with quotes, so flip the default: only quoted text goes in a bubble, the
+// rest is narration.
+const HAS_SPOKEN_QUOTES = /["“][^"”\n]{2,}["”]/;
 
 /**
- * Split a roleplay reply into narration (inside `* *` or `( )` → italic prose,
- * outside the bubble) and spoken dialogue (everything else → chat bubble).
- * Wrapping quotes on dialogue are stripped.
+ * Split a roleplay reply into narration (inside `* *` / `( )`, or — in quote
+ * mode — anything outside `" "` → italic prose outside the bubble) and spoken
+ * dialogue (the chat bubble). Wrapping quotes on dialogue are stripped.
  */
 function parseRoleplay(text: string): Segment[] {
+  const quoteMode = HAS_SPOKEN_QUOTES.test(text);
+  const outsideKind: "dialogue" | "narration" = quoteMode
+    ? "narration"
+    : "dialogue";
+
   const segs: Segment[] = [];
   let buf = "";
-  let closer = ""; // non-empty while inside a narration span
+  let spanKind: "" | "dialogue" | "narration" = "";
+  let closer = "";
 
   const push = (kind: "dialogue" | "narration") => {
     let t = buf.trim();
@@ -73,21 +84,27 @@ function parseRoleplay(text: string): Segment[] {
   };
 
   for (const ch of text) {
-    if (closer) {
+    if (spanKind) {
       if (ch === closer) {
-        push("narration");
+        push(spanKind);
+        spanKind = "";
         closer = "";
       } else {
         buf += ch;
       }
-    } else if (NARRATION_CLOSER[ch]) {
-      push("dialogue");
-      closer = NARRATION_CLOSER[ch];
+    } else if (NARRATION_OPENER[ch]) {
+      push(outsideKind);
+      spanKind = "narration";
+      closer = NARRATION_OPENER[ch];
+    } else if (quoteMode && DIALOGUE_OPENER[ch]) {
+      push(outsideKind);
+      spanKind = "dialogue";
+      closer = DIALOGUE_OPENER[ch];
     } else {
       buf += ch;
     }
   }
-  push(closer ? "narration" : "dialogue");
+  push(spanKind || outsideKind);
 
   const merged: Segment[] = [];
   for (const s of segs) {
