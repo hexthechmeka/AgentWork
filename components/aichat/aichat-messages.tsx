@@ -38,6 +38,113 @@ function messageText(message: ChatMessage): string {
     .join("");
 }
 
+type Segment = { kind: "dialogue" | "narration"; text: string };
+// straight ", smart “ ”, Korean 「 」 『 』
+const OPEN_QUOTES = new Set(['"', "“", "「", "『"]);
+const CLOSE_QUOTES = new Set(['"', "”", "」", "』"]);
+
+/**
+ * Split a roleplay reply into spoken lines (inside quotes → chat bubble) and
+ * everything else (narration / *actions* → italic, outside the bubble).
+ * Text wrapped in *asterisks* is always narration, even if it contains
+ * quotes. An unterminated quote at the end (mid-stream) stays "dialogue" so
+ * it fills a bubble as it arrives.
+ */
+function parseRoleplay(text: string): Segment[] {
+  const segs: Segment[] = [];
+  let buf = "";
+  let mode: "narration" | "dialogue" | "aster" = "narration";
+
+  const push = (kind: "dialogue" | "narration") => {
+    const t = buf.trim();
+    if (t) {
+      segs.push({ kind, text: t });
+    }
+    buf = "";
+  };
+
+  for (const ch of text) {
+    if (mode === "aster") {
+      if (ch === "*") {
+        push("narration");
+        mode = "narration";
+      } else {
+        buf += ch;
+      }
+      continue;
+    }
+    if (mode === "dialogue") {
+      if (CLOSE_QUOTES.has(ch)) {
+        push("dialogue");
+        mode = "narration";
+      } else {
+        buf += ch;
+      }
+      continue;
+    }
+    if (ch === "*") {
+      push("narration");
+      mode = "aster";
+    } else if (OPEN_QUOTES.has(ch)) {
+      push("narration");
+      mode = "dialogue";
+    } else {
+      buf += ch;
+    }
+  }
+  push(mode === "dialogue" ? "dialogue" : "narration");
+
+  const merged: Segment[] = [];
+  for (const s of segs) {
+    const prev = merged.at(-1);
+    if (prev && prev.kind === s.kind) {
+      prev.text += (s.kind === "narration" ? "\n" : " ") + s.text;
+    } else {
+      merged.push({ ...s });
+    }
+  }
+  return merged;
+}
+
+function CharacterMessage({
+  text,
+  persona,
+}: {
+  text: string;
+  persona?: Persona;
+}) {
+  const segments = parseRoleplay(text);
+  const blocks =
+    segments.length > 0 ? segments : [{ kind: "narration" as const, text }];
+
+  return (
+    <div className="flex flex-row items-start gap-2">
+      <PersonaAvatar persona={persona} />
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        {blocks.map((seg, i) =>
+          seg.kind === "dialogue" ? (
+            <div
+              className="w-fit max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-muted px-3.5 py-2 text-[13px] text-foreground leading-[1.7]"
+              // biome-ignore lint/suspicious/noArrayIndexKey: roleplay segments have no stable id
+              key={`${i}-d`}
+            >
+              {seg.text}
+            </div>
+          ) : (
+            <p
+              className="whitespace-pre-wrap px-1 text-[12px] text-muted-foreground italic leading-relaxed"
+              // biome-ignore lint/suspicious/noArrayIndexKey: roleplay segments have no stable id
+              key={`${i}-n`}
+            >
+              {seg.text}
+            </p>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TypingBubble({ persona }: { persona?: Persona }) {
   return (
     <div className="flex flex-row items-end gap-2">
@@ -81,33 +188,31 @@ export function AichatMessages({
     <Conversation className="flex-1">
       <ConversationContent className="mx-auto flex max-w-3xl flex-col gap-3 px-3 py-5 md:px-4">
         {messages.map((message) => {
-          const mine = message.role === "user";
           const text = messageText(message);
 
-          if (!(mine || text.trim())) {
-            return <TypingBubble key={message.id} persona={persona} />;
+          if (message.role === "user") {
+            if (!text.trim()) {
+              return null;
+            }
+            return (
+              <div className="flex flex-row-reverse" key={message.id}>
+                <div
+                  className={cn(
+                    "w-fit max-w-[78%] whitespace-pre-wrap rounded-2xl rounded-br-md px-3.5 py-2 text-[13px] leading-[1.7]",
+                    "bg-primary text-primary-foreground"
+                  )}
+                >
+                  <MessageResponse>{text}</MessageResponse>
+                </div>
+              </div>
+            );
           }
 
+          if (!text.trim()) {
+            return <TypingBubble key={message.id} persona={persona} />;
+          }
           return (
-            <div
-              className={cn(
-                "flex items-end gap-2",
-                mine ? "flex-row-reverse" : "flex-row"
-              )}
-              key={message.id}
-            >
-              {mine ? null : <PersonaAvatar persona={persona} />}
-              <div
-                className={cn(
-                  "max-w-[78%] rounded-2xl px-3.5 py-2 text-[13px] leading-[1.7]",
-                  mine
-                    ? "rounded-br-md bg-primary text-primary-foreground"
-                    : "rounded-bl-md bg-muted text-foreground"
-                )}
-              >
-                <MessageResponse>{text}</MessageResponse>
-              </div>
-            </div>
+            <CharacterMessage key={message.id} persona={persona} text={text} />
           );
         })}
 
