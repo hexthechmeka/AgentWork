@@ -6,10 +6,8 @@ import {
   ConversationContent,
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
-import { MessageResponse } from "@/components/ai-elements/message";
 import type { Persona } from "@/lib/db/schema";
 import type { ChatMessage } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
 function PersonaAvatar({ persona }: { persona?: Persona }) {
   return (
@@ -145,6 +143,36 @@ function CharacterMessage({
   );
 }
 
+function UserMessage({ text }: { text: string }) {
+  const segments = parseRoleplay(text);
+  const blocks =
+    segments.length > 0 ? segments : [{ kind: "dialogue" as const, text }];
+
+  return (
+    <div className="flex flex-col items-end gap-1.5">
+      {blocks.map((seg, i) =>
+        seg.kind === "dialogue" ? (
+          <div
+            className="w-fit max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-blue-500 px-3.5 py-2 text-[calc(13px_*_var(--aichat-msg-scale,1))] text-white leading-[1.7]"
+            // biome-ignore lint/suspicious/noArrayIndexKey: roleplay segments have no stable id
+            key={`${i}-d`}
+          >
+            {seg.text}
+          </div>
+        ) : (
+          <p
+            className="whitespace-pre-wrap px-1 text-right text-[calc(12px_*_var(--aichat-msg-scale,1))] text-muted-foreground/60 italic leading-relaxed"
+            // biome-ignore lint/suspicious/noArrayIndexKey: roleplay segments have no stable id
+            key={`${i}-n`}
+          >
+            {seg.text}
+          </p>
+        )
+      )}
+    </div>
+  );
+}
+
 function TypingBubble({ persona }: { persona?: Persona }) {
   return (
     <div className="flex flex-row items-end gap-2">
@@ -194,18 +222,7 @@ export function AichatMessages({
             if (!text.trim()) {
               return null;
             }
-            return (
-              <div className="flex flex-row-reverse" key={message.id}>
-                <div
-                  className={cn(
-                    "w-fit max-w-[78%] whitespace-pre-wrap rounded-2xl rounded-br-md px-3.5 py-2 text-[calc(13px_*_var(--aichat-msg-scale,1))] leading-[1.7]",
-                    "bg-blue-500 text-white"
-                  )}
-                >
-                  <MessageResponse>{text}</MessageResponse>
-                </div>
-              </div>
-            );
+            return <UserMessage key={message.id} text={text} />;
           }
 
           if (!text.trim()) {
