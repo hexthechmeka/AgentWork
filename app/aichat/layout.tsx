@@ -29,7 +29,10 @@ async function AichatShell({ children }: { children: React.ReactNode }) {
   const isCollapsed = cookieStore.get("sidebar_state")?.value !== "true";
 
   return (
-    <SidebarProvider defaultOpen={!isCollapsed}>
+    <SidebarProvider
+      defaultOpen={!isCollapsed}
+      style={{ "--sidebar-width": "24rem" } as React.CSSProperties}
+    >
       <AichatSidebar />
       <SidebarInset>
         <Toaster

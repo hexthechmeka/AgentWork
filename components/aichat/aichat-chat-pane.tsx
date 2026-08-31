@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { DataStreamHandler } from "@/components/chat/data-stream-handler";
 import { ModelSelectorCompact } from "@/components/chat/multimodal-input";
@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/select";
 import { useActiveChat } from "@/hooks/use-active-chat";
 import type { Persona } from "@/lib/db/schema";
-import { fetcher } from "@/lib/utils";
+import { cn, fetcher } from "@/lib/utils";
 import { AichatComposer } from "./aichat-composer";
 import { AichatMessages } from "./aichat-messages";
 import { getAichatKey } from "./aichat-sidebar";
@@ -44,6 +44,69 @@ type AichatResponse = {
 const PLAYER_PERSONAS_KEY = `${
   process.env.NEXT_PUBLIC_BASE_PATH ?? ""
 }/api/player-personas`;
+
+const FONT_SCALES = [
+  { id: "sm", label: "작게", value: 0.9 },
+  { id: "md", label: "보통", value: 1 },
+  { id: "lg", label: "크게", value: 1.15 },
+  { id: "xl", label: "아주 크게", value: 1.3 },
+] as const;
+type FontScaleId = (typeof FONT_SCALES)[number]["id"];
+const FONT_SCALE_STORAGE_KEY = "aichat-font-scale";
+
+/** Per-viewer chat font size, persisted in localStorage. */
+function useAichatFontScale() {
+  const [id, setId] = useState<FontScaleId>("md");
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(FONT_SCALE_STORAGE_KEY);
+      if (saved && FONT_SCALES.some((s) => s.id === saved)) {
+        setId(saved as FontScaleId);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const change = useCallback((next: FontScaleId) => {
+    setId(next);
+    try {
+      localStorage.setItem(FONT_SCALE_STORAGE_KEY, next);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const value = FONT_SCALES.find((s) => s.id === id)?.value ?? 1;
+  return { change, id, value };
+}
+
+function FontScaleButton({
+  scale,
+  active,
+  onSelect,
+}: {
+  scale: (typeof FONT_SCALES)[number];
+  active: boolean;
+  onSelect: (id: FontScaleId) => void;
+}) {
+  const pick = useCallback(() => onSelect(scale.id), [onSelect, scale.id]);
+  return (
+    <button
+      className={cn(
+        "flex-1 rounded-md border px-1.5 py-1 text-[11px] transition-colors",
+        active
+          ? "border-primary bg-primary/10 text-foreground"
+          : "border-border/50 text-muted-foreground hover:text-foreground"
+      )}
+      onClick={pick}
+      type="button"
+    >
+      {scale.label}
+    </button>
+  );
+}
 
 function PersonaHeader({ persona }: { persona?: Persona }) {
   return (
@@ -79,15 +142,18 @@ function PersonaPanel({ persona }: { persona?: Persona }) {
     return null;
   }
 
-  // Gallery-ready: the profile picture is the only image for now. A later
-  // image gallery will fill this list and enable the prev/next controls.
-  const images = persona.avatarUrl ? [persona.avatarUrl] : [];
+  // Gallery-ready: the tall panel image (1024x1536) is the only one for now.
+  // A later image gallery will fill this list and enable the prev/next
+  // controls. Falls back to the round profile picture if no panel art.
+  const images = [persona.panelImageUrl ?? persona.avatarUrl].filter(
+    (src): src is string => Boolean(src)
+  );
   const [image] = images;
   const hasGallery = images.length > 1;
 
   return (
-    <aside className="hidden w-[clamp(320px,30vw,440px)] shrink-0 flex-col items-center gap-3 border-border/40 border-r bg-background p-3 lg:flex">
-      <div className="relative min-h-[360px] w-full max-w-[400px] flex-1 overflow-hidden rounded-2xl border border-border/40 bg-muted shadow-xl">
+    <aside className="hidden w-[clamp(320px,30vw,440px)] shrink-0 flex-col items-center justify-center gap-3 overflow-y-auto border-border/40 border-r bg-background p-3 lg:flex">
+      <div className="relative aspect-[2/3] w-full max-w-[400px] shrink-0 overflow-hidden rounded-2xl border border-border/40 bg-muted shadow-xl">
         {image ? (
           // biome-ignore lint/performance/noImgElement: user-uploaded blob art
           <img
@@ -202,12 +268,16 @@ function ChatSettingsToolbar({
   onModelChange,
   personaId,
   activePlayerPersonaId,
+  fontScaleId,
+  onFontScaleChange,
 }: {
   chatId: string;
   selectedModelId: string;
   onModelChange: (modelId: string) => void;
   personaId?: string;
   activePlayerPersonaId: string | null;
+  fontScaleId: FontScaleId;
+  onFontScaleChange: (id: FontScaleId) => void;
 }) {
   return (
     <Popover>
@@ -249,6 +319,19 @@ function ChatSettingsToolbar({
             ＋ 페르소나 관리
           </Link>
         </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[11px] text-muted-foreground">글자 크기</span>
+          <div className="flex gap-1">
+            {FONT_SCALES.map((s) => (
+              <FontScaleButton
+                active={s.id === fontScaleId}
+                key={s.id}
+                onSelect={onFontScaleChange}
+                scale={s}
+              />
+            ))}
+          </div>
+        </div>
         {personaId ? (
           <Link
             className="text-[12px] text-muted-foreground hover:text-foreground"
@@ -286,6 +369,8 @@ export function AichatChatPane() {
   const activeChat = data?.chats.find((c) => c.id === chatId);
   const persona = data?.personas.find((p) => p.id === activeChat?.personaId);
 
+  const fontScale = useAichatFontScale();
+
   const stopRef = useRef(stop);
   stopRef.current = stop;
   const prevChatIdRef = useRef(chatId);
@@ -314,11 +399,18 @@ export function AichatChatPane() {
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <PersonaHeader persona={persona} />
 
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div
+          className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+          style={
+            { "--aichat-msg-scale": fontScale.value } as React.CSSProperties
+          }
+        >
           <div className="absolute top-2 right-2 z-10">
             <ChatSettingsToolbar
               activePlayerPersonaId={activeChat?.playerPersonaId ?? null}
               chatId={chatId}
+              fontScaleId={fontScale.id}
+              onFontScaleChange={fontScale.change}
               onModelChange={setCurrentModelId}
               personaId={persona?.id}
               selectedModelId={currentModelId}
