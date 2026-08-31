@@ -30,6 +30,7 @@ export type PersonaFormValues = {
   personality: string;
   openingMessage: string;
   scenario: string;
+  userPersona: string;
   defaultModel: string;
   tags: string; // comma-separated in the form
 };
@@ -44,6 +45,7 @@ export const EMPTY_PERSONA: PersonaFormValues = {
   scenario: "",
   tagline: "",
   tags: "",
+  userPersona: "",
 };
 
 type ImageField = "avatarUrl" | "panelImageUrl";
@@ -157,6 +159,7 @@ export function PersonaForm({ initial }: { initial: PersonaFormValues }) {
             .split(",")
             .map((t) => t.trim())
             .filter(Boolean),
+          userPersona: values.userPersona.trim() || null,
         };
         const res = await fetch(
           isEdit ? `/api/personas/${initial.id}` : "/api/personas",
@@ -322,6 +325,19 @@ export function PersonaForm({ initial }: { initial: PersonaFormValues }) {
             onChange={handleChange}
             placeholder="현재 상황 / 장면 설명"
             value={values.scenario}
+          />
+        </Field>
+
+        <Field
+          hint='캐릭터가 "나"를 누구로 인식할지 (선택)'
+          label='상대역 — "나" 설정'
+        >
+          <textarea
+            className={textareaClass}
+            name="userPersona"
+            onChange={handleChange}
+            placeholder="예: 이 편의점 야간 알바생. 며칠 전 새로 들어옴."
+            value={values.userPersona}
           />
         </Field>
 

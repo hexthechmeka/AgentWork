@@ -927,6 +927,7 @@ type PersonaInput = {
   tagline?: string | null;
   openingMessage?: string | null;
   scenario?: string | null;
+  userPersona?: string | null;
   tags?: string[];
 };
 
@@ -948,6 +949,7 @@ export async function createPersona({
         scenario: input.scenario ?? null,
         tagline: input.tagline ?? null,
         tags: input.tags ?? [],
+        userPersona: input.userPersona ?? null,
       })
       .returning();
     return created;
@@ -1011,6 +1013,9 @@ export async function updatePersona({
         }),
         ...(input.scenario !== undefined && { scenario: input.scenario }),
         ...(input.tags !== undefined && { tags: input.tags }),
+        ...(input.userPersona !== undefined && {
+          userPersona: input.userPersona,
+        }),
         updatedAt: new Date(),
       })
       .where(and(eq(persona.id, id), eq(persona.ownerId, ownerId)))

@@ -29,6 +29,7 @@ export default async function EditPersonaPage({
     scenario: persona.scenario ?? "",
     tagline: persona.tagline ?? "",
     tags: (persona.tags ?? []).join(", "),
+    userPersona: persona.userPersona ?? "",
   };
 
   return (

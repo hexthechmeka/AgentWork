@@ -1,16 +1,15 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { DataStreamHandler } from "@/components/chat/data-stream-handler";
-import { submitEditedMessage } from "@/components/chat/message-editor";
-import { Messages } from "@/components/chat/messages";
 import { MultimodalInput } from "@/components/chat/multimodal-input";
 import { useActiveChat } from "@/hooks/use-active-chat";
 import type { Persona } from "@/lib/db/schema";
-import type { Attachment, ChatMessage } from "@/lib/types";
+import type { Attachment } from "@/lib/types";
 import { fetcher } from "@/lib/utils";
+import { AichatMessages } from "./aichat-messages";
 import { getAichatKey } from "./aichat-sidebar";
 
 type AichatResponse = {
@@ -58,7 +57,6 @@ export function AichatChatPane() {
     sendMessage,
     status,
     stop,
-    regenerate,
     input,
     setInput,
     visibilityType,
@@ -76,9 +74,6 @@ export function AichatChatPane() {
   const activePersonaId = data?.chats.find((c) => c.id === chatId)?.personaId;
   const persona = data?.personas.find((p) => p.id === activePersonaId);
 
-  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(
-    null
-  );
   const [attachments, setAttachments] = useState<Attachment[]>([]);
 
   const stopRef = useRef(stop);
@@ -88,42 +83,9 @@ export function AichatChatPane() {
     if (prevChatIdRef.current !== chatId) {
       prevChatIdRef.current = chatId;
       stopRef.current();
-      setEditingMessage(null);
       setAttachments([]);
     }
   }, [chatId]);
-
-  const handleEditMessage = useCallback(
-    (msg: ChatMessage) => {
-      const text = msg.parts
-        ?.filter((p) => p.type === "text")
-        .map((p) => p.text)
-        .join("");
-      setInput(text ?? "");
-      setEditingMessage(msg);
-    },
-    [setInput]
-  );
-
-  const handleCancelEdit = useCallback(() => {
-    setEditingMessage(null);
-    setInput("");
-  }, [setInput]);
-
-  const handleSendEditedMessage = useCallback(async () => {
-    if (!editingMessage) {
-      return;
-    }
-    const msg = editingMessage;
-    setEditingMessage(null);
-    await submitEditedMessage({
-      message: msg,
-      regenerate,
-      setMessages,
-      text: input,
-    });
-    setInput("");
-  }, [editingMessage, input, regenerate, setInput, setMessages]);
 
   if (!hasChat) {
     return (
@@ -141,8 +103,7 @@ export function AichatChatPane() {
       <PersonaHeader persona={persona} />
 
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <Messages
-          chatId={chatId}
+        <AichatMessages
           greeting={
             <div className="flex flex-col items-center gap-3 px-4 text-center">
               <span className="flex size-14 items-center justify-center overflow-hidden rounded-full border border-border bg-muted text-[13px] text-muted-foreground">
@@ -165,14 +126,8 @@ export function AichatChatPane() {
               </p>
             </div>
           }
-          isArtifactVisible={false}
-          isLoading={isLoading}
-          isReadonly={isReadonly}
           messages={messages}
-          onEditMessage={handleEditMessage}
-          regenerate={regenerate}
-          selectedModelId={currentModelId}
-          setMessages={setMessages}
+          persona={persona}
           status={status}
         />
 
@@ -181,19 +136,15 @@ export function AichatChatPane() {
             <MultimodalInput
               attachments={attachments}
               chatId={chatId}
-              editingMessage={editingMessage}
               input={input}
               isLoading={isLoading}
               messages={messages}
-              onCancelEdit={handleCancelEdit}
               onEffortChange={setCurrentEffort}
               onModelChange={setCurrentModelId}
               selectedEffort={currentEffort}
               selectedModelId={currentModelId}
               selectedVisibilityType={visibilityType}
-              sendMessage={
-                editingMessage ? handleSendEditedMessage : sendMessage
-              }
+              sendMessage={sendMessage}
               setAttachments={setAttachments}
               setInput={setInput}
               setMessages={setMessages}

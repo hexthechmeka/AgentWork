@@ -59,6 +59,9 @@ export const persona = pgTable("Persona", {
   tagline: text("tagline"),
   tags: text("tags").array().notNull().default([]),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  // Who the user plays in the roleplay ("나"). Injected into the system
+  // prompt so the character knows who it's talking to.
+  userPersona: text("userPersona"),
 });
 
 export type Persona = InferSelectModel<typeof persona>;

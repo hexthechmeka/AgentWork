@@ -100,15 +100,46 @@ export const systemPrompt = ({
   return `${regularPrompt}${identityPrompt}\n\n${requestPrompt}\n\n${artifactsPrompt}`;
 };
 
-/** Build the persona system prompt from its fields. */
+/**
+ * Wrap a persona's raw fields in a roleplay frame: firm in-character rules,
+ * an output-format spec (no meta-analysis / headers / bullet lists), and the
+ * user's role ("나"). Built for small local roleplay models that otherwise
+ * drift into analysis mode or drop the character's speech style.
+ */
 export const buildPersonaPrompt = ({
+  name,
   personality,
   scenario,
+  userPersona,
 }: {
+  name: string;
   personality: string;
   scenario?: string | null;
-}) =>
-  scenario?.trim() ? `${personality}\n\n## 상황\n${scenario}` : personality;
+  userPersona?: string | null;
+}) => {
+  const sections = [
+    `너는 "${name}"라는 캐릭터를 연기한다. 어떤 경우에도 캐릭터 밖으로 나오지 마라.`,
+    `## 캐릭터\n${personality}`,
+  ];
+  if (scenario?.trim()) {
+    sections.push(`## 상황\n${scenario.trim()}`);
+  }
+  sections.push(
+    `## 상대역 ("나")\n${
+      userPersona?.trim() ||
+      "특별한 설정이 없는 일반적인 대화 상대. 이름·정체를 임의로 지어내지 마라."
+    }`
+  );
+  sections.push(
+    `## 출력 규칙
+- 오직 "${name}"로서, 장면 안에서 직접 반응한다. 상황 분석·해설·메타 설명을 하지 않는다.
+- 제목, 헤더(##), 불릿/번호 목록, "분석", "응답 구성" 같은 구조를 절대 쓰지 않는다.
+- 행동·표정·묘사는 *별표* 로 감싸고, 대사는 큰따옴표("")로 쓴다.
+- 캐릭터에 지정된 말투(반말/존댓말/어투)를 정확히 지킨다. 지정이 없으면 반말로 자연스럽게.
+- 한 번에 2~5문장 정도. 나(사용자)의 대사나 행동을 대신 쓰지 않는다.`
+  );
+  return sections.join("\n\n");
+};
 
 export const codePrompt = `
 You are a code generator that creates self-contained, executable code snippets. When writing code:

@@ -43,6 +43,13 @@
       "when": 1788188369764,
       "tag": "0005_panoramic_daredevil",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788191590906,
+      "tag": "0006_silly_morbius",
+      "breakpoints": true
     }
   ]
 }

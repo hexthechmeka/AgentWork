@@ -319,8 +319,10 @@ export async function POST(request: Request) {
       : null;
     const personaPrompt = personaRow
       ? buildPersonaPrompt({
+          name: personaRow.name,
           personality: personaRow.personality,
           scenario: personaRow.scenario,
+          userPersona: personaRow.userPersona,
         })
       : undefined;
 

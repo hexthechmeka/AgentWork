@@ -16,6 +16,7 @@ const createSchema = z.object({
   scenario: z.string().max(8000).nullish(),
   tagline: z.string().max(300).nullish(),
   tags: z.array(z.string().max(40)).max(20).optional(),
+  userPersona: z.string().max(4000).nullish(),
 });
 
 export async function GET() {
