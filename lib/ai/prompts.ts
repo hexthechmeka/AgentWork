@@ -83,9 +83,10 @@ export const systemPrompt = ({
   const requestPrompt = getRequestPromptFromHints(requestHints);
 
   // A persona chat is roleplay: the persona's instructions replace the
-  // assistant framing entirely (no artifacts, no "be concise").
+  // assistant framing entirely — no artifacts, no "be concise", and no geo
+  // request hints (a small local model treats "lat:/lon:" as a task).
   if (personaPrompt) {
-    return `${personaPrompt}\n\n${requestPrompt}`;
+    return personaPrompt;
   }
 
   const identityPrompt = identity

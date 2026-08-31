@@ -404,15 +404,17 @@ export async function POST(request: Request) {
         };
 
         const result = streamText({
-          activeTools:
-            isReasoningModel && !supportsTools
-              ? []
-              : [
-                  "createDocument",
-                  "editDocument",
-                  "updateDocument",
-                  "requestSuggestions",
-                ],
+          // No tools for models that don't support them (reasoning-only
+          // models, and the aichat roleplay model — it leaks tool-call
+          // syntax when it sees tool definitions).
+          activeTools: supportsTools
+            ? [
+                "createDocument",
+                "editDocument",
+                "updateDocument",
+                "requestSuggestions",
+              ]
+            : [],
           instructions: systemPrompt({
             identity,
             personaPrompt,
