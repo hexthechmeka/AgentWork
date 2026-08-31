@@ -40,6 +40,7 @@ import {
   getMessageCountByUserId,
   getMessagesByChatId,
   getPersonaById,
+  getPlayerPersonaById,
   getProjectById,
   isProviderHardLocked,
   saveChat,
@@ -317,12 +318,21 @@ export async function POST(request: Request) {
     const personaRow = chat?.personaId
       ? await getPersonaById({ id: chat.personaId })
       : null;
+    // "나" = the chat's selected player-persona preset, falling back to the
+    // character's own built-in userPersona field.
+    let playerPersonaText: string | null = personaRow?.userPersona ?? null;
+    if (chat?.playerPersonaId) {
+      const pp = await getPlayerPersonaById({ id: chat.playerPersonaId });
+      if (pp && pp.ownerId === session.user.id) {
+        playerPersonaText = pp.description;
+      }
+    }
     const personaPrompt = personaRow
       ? buildPersonaPrompt({
           name: personaRow.name,
           personality: personaRow.personality,
           scenario: personaRow.scenario,
-          userPersona: personaRow.userPersona,
+          userPersona: playerPersonaText,
         })
       : undefined;
 

@@ -3,8 +3,8 @@
 import { SlidersHorizontalIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef } from "react";
-import useSWR from "swr";
+import { useCallback, useEffect, useRef } from "react";
+import useSWR, { useSWRConfig } from "swr";
 import { DataStreamHandler } from "@/components/chat/data-stream-handler";
 import { ModelSelectorCompact } from "@/components/chat/multimodal-input";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useActiveChat } from "@/hooks/use-active-chat";
 import type { Persona } from "@/lib/db/schema";
 import { fetcher } from "@/lib/utils";
@@ -22,8 +29,16 @@ import { getAichatKey } from "./aichat-sidebar";
 
 type AichatResponse = {
   personas: Persona[];
-  chats: { id: string; personaId: string | null }[];
+  chats: {
+    id: string;
+    personaId: string | null;
+    playerPersonaId: string | null;
+  }[];
 };
+
+const PLAYER_PERSONAS_KEY = `${
+  process.env.NEXT_PUBLIC_BASE_PATH ?? ""
+}/api/player-personas`;
 
 function PersonaHeader({ persona }: { persona?: Persona }) {
   return (
@@ -54,14 +69,64 @@ function PersonaHeader({ persona }: { persona?: Persona }) {
   );
 }
 
+function PlayerPersonaField({
+  chatId,
+  activeId,
+}: {
+  chatId: string;
+  activeId: string | null;
+}) {
+  const { mutate } = useSWRConfig();
+  const { data } = useSWR<{
+    playerPersonas: { id: string; name: string }[];
+  }>(PLAYER_PERSONAS_KEY, fetcher, { revalidateOnFocus: false });
+  const options = data?.playerPersonas ?? [];
+
+  const handleChange = useCallback(
+    async (value: string) => {
+      const playerPersonaId = value === "none" ? null : value;
+      await fetch(
+        `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/aichat/chat/${chatId}`,
+        {
+          body: JSON.stringify({ playerPersonaId }),
+          headers: { "Content-Type": "application/json" },
+          method: "PATCH",
+        }
+      );
+      mutate(getAichatKey());
+    },
+    [chatId, mutate]
+  );
+
+  return (
+    <Select onValueChange={handleChange} value={activeId ?? "none"}>
+      <SelectTrigger className="h-8 text-[12px]" size="sm">
+        <SelectValue placeholder="없음" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="none">없음</SelectItem>
+        {options.map((o) => (
+          <SelectItem key={o.id} value={o.id}>
+            {o.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function ChatSettingsToolbar({
+  chatId,
   selectedModelId,
   onModelChange,
   personaId,
+  activePlayerPersonaId,
 }: {
+  chatId: string;
   selectedModelId: string;
   onModelChange: (modelId: string) => void;
   personaId?: string;
+  activePlayerPersonaId: string | null;
 }) {
   return (
     <Popover>
@@ -87,6 +152,21 @@ function ChatSettingsToolbar({
             onModelChange={onModelChange}
             selectedModelId={selectedModelId}
           />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[11px] text-muted-foreground">
+            나의 페르소나
+          </span>
+          <PlayerPersonaField
+            activeId={activePlayerPersonaId}
+            chatId={chatId}
+          />
+          <Link
+            className="text-[11px] text-muted-foreground hover:text-foreground"
+            href="/aichat/me"
+          >
+            ＋ 페르소나 관리
+          </Link>
         </div>
         {personaId ? (
           <Link
@@ -122,8 +202,8 @@ export function AichatChatPane() {
   const { data } = useSWR<AichatResponse>(getAichatKey(), fetcher, {
     revalidateOnFocus: false,
   });
-  const activePersonaId = data?.chats.find((c) => c.id === chatId)?.personaId;
-  const persona = data?.personas.find((p) => p.id === activePersonaId);
+  const activeChat = data?.chats.find((c) => c.id === chatId);
+  const persona = data?.personas.find((p) => p.id === activeChat?.personaId);
 
   const stopRef = useRef(stop);
   stopRef.current = stop;
@@ -153,6 +233,8 @@ export function AichatChatPane() {
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="absolute top-2 right-2 z-10">
           <ChatSettingsToolbar
+            activePlayerPersonaId={activeChat?.playerPersonaId ?? null}
+            chatId={chatId}
             onModelChange={setCurrentModelId}
             personaId={persona?.id}
             selectedModelId={currentModelId}

@@ -66,6 +66,22 @@ export const persona = pgTable("Persona", {
 
 export type Persona = InferSelectModel<typeof persona>;
 
+// AIchat: a reusable preset for who the *user* plays ("나"). Chosen per chat
+// from the settings panel and injected into the persona system prompt so the
+// character knows who it's talking to.
+export const playerPersona = pgTable("PlayerPersona", {
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  description: text("description").notNull(),
+  id: uuid("id").primaryKey().notNull().defaultRandom(),
+  name: varchar("name", { length: 80 }).notNull(),
+  ownerId: uuid("ownerId")
+    .notNull()
+    .references(() => user.id),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+});
+
+export type PlayerPersona = InferSelectModel<typeof playerPersona>;
+
 export const chat = pgTable("Chat", {
   createdAt: timestamp("createdAt").notNull(),
   id: uuid("id").primaryKey().notNull().defaultRandom(),
@@ -73,6 +89,9 @@ export const chat = pgTable("Chat", {
     .notNull()
     .default("planning"),
   personaId: uuid("personaId").references(() => persona.id, {
+    onDelete: "set null",
+  }),
+  playerPersonaId: uuid("playerPersonaId").references(() => playerPersona.id, {
     onDelete: "set null",
   }),
   projectId: uuid("projectId").references(() => project.id),

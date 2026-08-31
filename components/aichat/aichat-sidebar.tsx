@@ -47,6 +47,7 @@ type PersonaChatRow = {
   id: string;
   title: string;
   personaId: string | null;
+  playerPersonaId: string | null;
   createdAt: string;
   lastMessage: string;
   lastMessageAt: string;

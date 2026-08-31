@@ -39,24 +39,26 @@ function messageText(message: ChatMessage): string {
 }
 
 type Segment = { kind: "dialogue" | "narration"; text: string };
-// straight ", smart “ ”, Korean 「 」 『 』
-const OPEN_QUOTES = new Set(['"', "“", "「", "『"]);
-const CLOSE_QUOTES = new Set(['"', "”", "」", "』"]);
+
+// Leading/trailing whitespace + quote marks (straight, smart, Korean) peeled
+// off a spoken line so the bubble holds just the words.
+const EDGE_QUOTES = /^[\s"“”„‟'‘’「」『』]+|[\s"“”„‟'‘’「」『』]+$/g;
 
 /**
- * Split a roleplay reply into spoken lines (inside quotes → chat bubble) and
- * everything else (narration / *actions* → italic, outside the bubble).
- * Text wrapped in *asterisks* is always narration, even if it contains
- * quotes. An unterminated quote at the end (mid-stream) stays "dialogue" so
- * it fills a bubble as it arrives.
+ * Split a roleplay reply on *asterisk* spans: text inside `* *` is narration
+ * (italic, outside the bubble); everything else is spoken dialogue and fills
+ * a chat bubble. Wrapping quotes on dialogue are stripped.
  */
 function parseRoleplay(text: string): Segment[] {
   const segs: Segment[] = [];
   let buf = "";
-  let mode: "narration" | "dialogue" | "aster" = "narration";
+  let inAster = false;
 
   const push = (kind: "dialogue" | "narration") => {
-    const t = buf.trim();
+    let t = buf.trim();
+    if (kind === "dialogue") {
+      t = t.replace(EDGE_QUOTES, "").trim();
+    }
     if (t) {
       segs.push({ kind, text: t });
     }
@@ -64,35 +66,14 @@ function parseRoleplay(text: string): Segment[] {
   };
 
   for (const ch of text) {
-    if (mode === "aster") {
-      if (ch === "*") {
-        push("narration");
-        mode = "narration";
-      } else {
-        buf += ch;
-      }
-      continue;
-    }
-    if (mode === "dialogue") {
-      if (CLOSE_QUOTES.has(ch)) {
-        push("dialogue");
-        mode = "narration";
-      } else {
-        buf += ch;
-      }
-      continue;
-    }
     if (ch === "*") {
-      push("narration");
-      mode = "aster";
-    } else if (OPEN_QUOTES.has(ch)) {
-      push("narration");
-      mode = "dialogue";
+      push(inAster ? "narration" : "dialogue");
+      inAster = !inAster;
     } else {
       buf += ch;
     }
   }
-  push(mode === "dialogue" ? "dialogue" : "narration");
+  push(inAster ? "narration" : "dialogue");
 
   const merged: Segment[] = [];
   for (const s of segs) {

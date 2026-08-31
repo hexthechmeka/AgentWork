@@ -71,10 +71,16 @@ export function AichatComposer({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === "Enter" && !(e.shiftKey || e.nativeEvent.isComposing)) {
-        e.preventDefault();
-        submit();
+      if (e.key !== "Enter" || e.shiftKey) {
+        return;
       }
+      // Korean/IME: an Enter that commits a composition (isComposing / the
+      // legacy keyCode 229 sentinel) must not also send — the next Enter does.
+      if (e.nativeEvent.isComposing || e.keyCode === 229) {
+        return;
+      }
+      e.preventDefault();
+      submit();
     },
     [submit]
   );

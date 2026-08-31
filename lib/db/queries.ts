@@ -28,7 +28,9 @@ import {
   document,
   message,
   type Persona,
+  type PlayerPersona,
   persona,
+  playerPersona,
   project,
   providerLimit,
   type Suggestion,
@@ -1109,6 +1111,7 @@ export async function getPersonaChatsByOwnerId({ userId }: { userId: string }) {
         createdAt: chat.createdAt,
         id: chat.id,
         personaId: chat.personaId,
+        playerPersonaId: chat.playerPersonaId,
         title: chat.title,
         visibility: chat.visibility,
       })
@@ -1181,6 +1184,123 @@ export async function startPersonaChat({
     }
 
     return chatId;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+// ─── AIchat: player personas (who "나" is) ────────────────────────────────
+
+export async function getPlayerPersonasByOwnerId({
+  ownerId,
+}: {
+  ownerId: string;
+}): Promise<PlayerPersona[]> {
+  try {
+    return await db
+      .select()
+      .from(playerPersona)
+      .where(eq(playerPersona.ownerId, ownerId))
+      .orderBy(desc(playerPersona.updatedAt));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function getPlayerPersonaById({
+  id,
+}: {
+  id: string;
+}): Promise<PlayerPersona | null> {
+  try {
+    const [row] = await db
+      .select()
+      .from(playerPersona)
+      .where(eq(playerPersona.id, id));
+    return row ?? null;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function createPlayerPersona({
+  ownerId,
+  name,
+  description,
+}: {
+  ownerId: string;
+  name: string;
+  description: string;
+}) {
+  try {
+    const [created] = await db
+      .insert(playerPersona)
+      .values({ description, name, ownerId })
+      .returning();
+    return created;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function updatePlayerPersona({
+  id,
+  ownerId,
+  name,
+  description,
+}: {
+  id: string;
+  ownerId: string;
+  name?: string;
+  description?: string;
+}) {
+  try {
+    const [updated] = await db
+      .update(playerPersona)
+      .set({
+        ...(description !== undefined && { description }),
+        ...(name !== undefined && { name }),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(playerPersona.id, id), eq(playerPersona.ownerId, ownerId)))
+      .returning();
+    return updated ?? null;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function deletePlayerPersona({
+  id,
+  ownerId,
+}: {
+  id: string;
+  ownerId: string;
+}) {
+  try {
+    await db
+      .delete(playerPersona)
+      .where(and(eq(playerPersona.id, id), eq(playerPersona.ownerId, ownerId)));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/** Set (or clear, with null) which player persona a chat uses for "나". */
+export async function setChatPlayerPersona({
+  chatId,
+  userId,
+  playerPersonaId,
+}: {
+  chatId: string;
+  userId: string;
+  playerPersonaId: string | null;
+}) {
+  try {
+    await db
+      .update(chat)
+      .set({ playerPersonaId })
+      .where(and(eq(chat.id, chatId), eq(chat.userId, userId)));
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }
