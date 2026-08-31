@@ -100,6 +100,25 @@ export function AichatComposer({
     setMessages((m) => m);
   }, [setMessages, stop]);
 
+  const insertNarration = useCallback(() => {
+    const base = input.replace(/\s+$/, "");
+    const next = base ? `${base}\n*  *` : "*  *";
+    const caret = next.length - 2;
+    setInput(next);
+    // Run after React commits the controlled value (which resets the caret
+    // to the end) so we can drop it between the asterisks.
+    setTimeout(() => {
+      const el = textareaRef.current;
+      if (!el) {
+        return;
+      }
+      el.focus();
+      el.setSelectionRange(caret, caret);
+      el.style.height = "auto";
+      el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`;
+    }, 0);
+  }, [input, setInput]);
+
   const canSend = Boolean(input.trim()) && !hardLocked;
 
   return (
@@ -109,6 +128,15 @@ export function AichatComposer({
           {HARD_LOCK_MESSAGE}
         </div>
       ) : null}
+      <div className="mb-1.5 flex">
+        <button
+          className="rounded-full px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          onClick={insertNarration}
+          type="button"
+        >
+          ＊ 상황 묘사
+        </button>
+      </div>
       <div className="flex items-end gap-2 rounded-3xl border border-border/50 bg-card/80 py-1.5 pr-1.5 pl-4 shadow-[var(--shadow-composer)] transition-shadow focus-within:shadow-[var(--shadow-composer-focus)]">
         <textarea
           className="max-h-[140px] flex-1 resize-none bg-transparent py-1.5 text-[13px] leading-relaxed outline-none placeholder:text-muted-foreground/40"

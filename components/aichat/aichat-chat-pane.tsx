@@ -69,6 +69,61 @@ function PersonaHeader({ persona }: { persona?: Persona }) {
   );
 }
 
+function PersonaPanel({ persona }: { persona?: Persona }) {
+  if (!persona) {
+    return null;
+  }
+  const cover = persona.panelImageUrl ?? persona.avatarUrl;
+  return (
+    <aside className="hidden w-64 shrink-0 flex-col overflow-y-auto border-border/40 border-r bg-sidebar lg:flex">
+      <div className="relative aspect-[3/4] w-full shrink-0 overflow-hidden bg-muted">
+        {cover ? (
+          // biome-ignore lint/performance/noImgElement: user-uploaded blob art
+          <img
+            alt={persona.name}
+            className="size-full object-cover"
+            src={cover}
+          />
+        ) : (
+          <div className="flex size-full items-center justify-center text-2xl text-muted-foreground">
+            {persona.name.slice(0, 2)}
+          </div>
+        )}
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-3">
+          <p className="font-semibold text-[15px] text-white leading-tight">
+            {persona.name}
+          </p>
+          {persona.tagline ? (
+            <p className="mt-0.5 text-[11px] text-white/70">
+              {persona.tagline}
+            </p>
+          ) : null}
+        </div>
+      </div>
+      <div className="flex flex-col gap-2 p-3">
+        {persona.tags.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {persona.tags.map((t) => (
+              <span
+                className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground"
+                key={t}
+              >
+                #{t}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <Link
+          className="text-[11px] text-muted-foreground hover:text-foreground"
+          href={`/aichat/${persona.id}`}
+        >
+          캐릭터 상세 보기
+        </Link>
+      </div>
+    </aside>
+  );
+}
+
 function PlayerPersonaField({
   chatId,
   activeId,
@@ -227,64 +282,68 @@ export function AichatChatPane() {
   }
 
   return (
-    <div className="flex h-dvh w-full flex-col overflow-hidden bg-background">
-      <PersonaHeader persona={persona} />
+    <div className="flex h-dvh w-full overflow-hidden bg-background">
+      <PersonaPanel persona={persona} />
 
-      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="absolute top-2 right-2 z-10">
-          <ChatSettingsToolbar
-            activePlayerPersonaId={activeChat?.playerPersonaId ?? null}
-            chatId={chatId}
-            onModelChange={setCurrentModelId}
-            personaId={persona?.id}
-            selectedModelId={currentModelId}
-          />
-        </div>
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <PersonaHeader persona={persona} />
 
-        <AichatMessages
-          greeting={
-            <div className="flex flex-col items-center gap-3 px-4 text-center">
-              <span className="flex size-14 items-center justify-center overflow-hidden rounded-full border border-border bg-muted text-[13px] text-muted-foreground">
-                {persona?.avatarUrl ? (
-                  // biome-ignore lint/performance/noImgElement: user-uploaded blob avatar
-                  <img
-                    alt=""
-                    className="size-full object-cover"
-                    src={persona.avatarUrl}
-                  />
-                ) : (
-                  (persona?.name ?? "AI").slice(0, 2)
-                )}
-              </span>
-              <p className="font-semibold text-foreground text-lg">
-                {persona?.name ?? "AIchat"}
-              </p>
-              <p className="text-[13px] text-muted-foreground">
-                {persona?.tagline ?? "메시지를 보내 대화를 시작하세요."}
-              </p>
-            </div>
-          }
-          messages={messages}
-          persona={persona}
-          status={status}
-        />
-
-        <div className="sticky bottom-0 z-1 w-full bg-background">
-          {isReadonly ? null : (
-            <AichatComposer
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="absolute top-2 right-2 z-10">
+            <ChatSettingsToolbar
+              activePlayerPersonaId={activeChat?.playerPersonaId ?? null}
               chatId={chatId}
-              input={input}
-              sendMessage={sendMessage}
-              setInput={setInput}
-              setMessages={setMessages}
-              status={status}
-              stop={stop}
+              onModelChange={setCurrentModelId}
+              personaId={persona?.id}
+              selectedModelId={currentModelId}
             />
-          )}
-        </div>
-      </div>
+          </div>
 
-      <DataStreamHandler />
+          <AichatMessages
+            greeting={
+              <div className="flex flex-col items-center gap-3 px-4 text-center">
+                <span className="flex size-14 items-center justify-center overflow-hidden rounded-full border border-border bg-muted text-[13px] text-muted-foreground">
+                  {persona?.avatarUrl ? (
+                    // biome-ignore lint/performance/noImgElement: user-uploaded blob avatar
+                    <img
+                      alt=""
+                      className="size-full object-cover"
+                      src={persona.avatarUrl}
+                    />
+                  ) : (
+                    (persona?.name ?? "AI").slice(0, 2)
+                  )}
+                </span>
+                <p className="font-semibold text-foreground text-lg">
+                  {persona?.name ?? "AIchat"}
+                </p>
+                <p className="text-[13px] text-muted-foreground">
+                  {persona?.tagline ?? "메시지를 보내 대화를 시작하세요."}
+                </p>
+              </div>
+            }
+            messages={messages}
+            persona={persona}
+            status={status}
+          />
+
+          <div className="sticky bottom-0 z-1 w-full bg-background">
+            {isReadonly ? null : (
+              <AichatComposer
+                chatId={chatId}
+                input={input}
+                sendMessage={sendMessage}
+                setInput={setInput}
+                setMessages={setMessages}
+                status={status}
+                stop={stop}
+              />
+            )}
+          </div>
+        </div>
+
+        <DataStreamHandler />
+      </div>
     </div>
   );
 }
