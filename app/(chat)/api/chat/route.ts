@@ -24,6 +24,7 @@ import {
 import {
   buildPersonaPrompt,
   buildRoleplaySummaryPrompt,
+  parsePersonaGenParams,
   type RequestHints,
   systemPrompt,
   type UnifiedChatIdentity,
@@ -331,9 +332,12 @@ export async function POST(request: Request) {
         playerPersonaText = pp.description;
       }
     }
-    const personaTemplate = personaRow
-      ? await getSetting("persona_prompt_template")
-      : null;
+    const [personaTemplate, personaGenRaw] = personaRow
+      ? await Promise.all([
+          getSetting("persona_prompt_template"),
+          getSetting("persona_gen_params"),
+        ])
+      : [null, null];
     const personaPrompt = personaRow
       ? buildPersonaPrompt({
           exampleDialogue: personaRow.exampleDialogue,
@@ -346,15 +350,16 @@ export async function POST(request: Request) {
         })
       : undefined;
     const isPersonaChat = Boolean(personaRow);
-    // Roleplay wants long, varied prose. Loosen sampling and lift the output
-    // cap (the local model otherwise stops after a couple of sentences).
+    // Roleplay sampling — user-tunable from /aichat/settings. Defaults favour
+    // stable Korean with room for long replies.
+    const gp = parsePersonaGenParams(personaGenRaw);
     const personaGenParams = isPersonaChat
       ? {
-          frequencyPenalty: 0.3,
-          maxOutputTokens: 900,
-          presencePenalty: 0.3,
-          temperature: 0.95,
-          topP: 0.95,
+          frequencyPenalty: gp.penalty,
+          maxOutputTokens: gp.maxOutputTokens,
+          presencePenalty: gp.penalty,
+          temperature: gp.temperature,
+          topP: gp.topP,
         }
       : {};
 

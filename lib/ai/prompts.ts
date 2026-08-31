@@ -133,10 +133,62 @@ export const DEFAULT_PERSONA_PROMPT_TEMPLATE = `너는 "{{name}}"라는 인물�
 - 매번 질문으로 끝내지 않는다. 대화를 억지로 끌고 가려 하지 말고, 받아주고 머무는 것도 좋다.
 
 ## 형식
+- 자연스러운 한국어 구어체로만 쓴다. 번역투, 어색한 조사·어미, 문어체 남용, 국적 불명의 표현을 피하고 실제 한국 사람이 말하고 쓰듯 한다.
 - 행동·표정·배경 묘사는 *별표* 사이에 넣는다. 소리 내어 하는 대사는 별표 밖에 그대로 쓰고 따옴표는 쓰지 않는다.
 - 제목, 헤더(#), 목록, "분석"·"응답" 같은 머리말을 절대 쓰지 않는다. 첫 글자부터 바로 장면이다.
 - "{{name}}"의 말투(반말/존댓말/어투)를 정확히 지킨다. 나(사용자)의 대사나 행동을 대신 쓰지 않는다.
 - [DEV] ... [/DEV] 로 감싼 내 지시는 이야기 밖 작가 노트다. 앞뒤 맥락을 따지지 말고 그대로 반영하되, 그 문구 자체를 대사·묘사로 되뇌지 않는다.`;
+
+export type PersonaGenParams = {
+  temperature: number;
+  topP: number;
+  penalty: number;
+  maxOutputTokens: number;
+};
+
+// Tuned for the small local roleplay model: lower temperature + light
+// penalties keep the Korean stable, with room for long replies.
+export const DEFAULT_PERSONA_GEN_PARAMS: PersonaGenParams = {
+  maxOutputTokens: 900,
+  penalty: 0.15,
+  temperature: 0.8,
+  topP: 0.9,
+};
+
+const clampNum = (v: unknown, lo: number, hi: number, dflt: number) =>
+  typeof v === "number" && Number.isFinite(v)
+    ? Math.min(hi, Math.max(lo, v))
+    : dflt;
+
+/** Parse the user-editable persona generation params (stored as JSON). */
+export function parsePersonaGenParams(raw: string | null): PersonaGenParams {
+  if (!raw) {
+    return DEFAULT_PERSONA_GEN_PARAMS;
+  }
+  try {
+    const p = JSON.parse(raw) as Partial<PersonaGenParams>;
+    return {
+      maxOutputTokens: Math.round(
+        clampNum(
+          p.maxOutputTokens,
+          128,
+          4000,
+          DEFAULT_PERSONA_GEN_PARAMS.maxOutputTokens
+        )
+      ),
+      penalty: clampNum(p.penalty, 0, 2, DEFAULT_PERSONA_GEN_PARAMS.penalty),
+      temperature: clampNum(
+        p.temperature,
+        0,
+        2,
+        DEFAULT_PERSONA_GEN_PARAMS.temperature
+      ),
+      topP: clampNum(p.topP, 0.05, 1, DEFAULT_PERSONA_GEN_PARAMS.topP),
+    };
+  } catch {
+    return DEFAULT_PERSONA_GEN_PARAMS;
+  }
+}
 
 /**
  * Fill the roleplay template with a persona's fields. `template` overrides the
@@ -178,7 +230,14 @@ export const buildPersonaPrompt = ({
       "{{summary}}",
       rollingSummary?.trim() || "아직 없음. (첫 대화이거나 요약 전)"
     )
-    .replaceAll("{{exampleDialogue}}", exampleDialogue?.trim() || "(예시 없음)")
+    .replaceAll(
+      "{{exampleDialogue}}",
+      exampleDialogue?.trim() ||
+        `나: 오늘 좀 늦었네.
+${name}: *들고 있던 걸 내려놓고 고개를 든다* 안 그래도 기다리고 있었어. ...무슨 일 있었어?
+나: 그냥, 일이 좀 밀려서.
+${name}: *잠깐 말을 고르다가 짧게 웃는다* 고생했네. 앉아, 뭐라도 좀 마시고 얘기해.`
+    )
     .trim();
 };
 
