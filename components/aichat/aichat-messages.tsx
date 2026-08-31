@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 
 function PersonaAvatar({ persona }: { persona?: Persona }) {
   return (
-    <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-muted text-[9px] text-muted-foreground">
+    <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-muted text-[11px] text-muted-foreground">
       {persona?.avatarUrl ? (
         // biome-ignore lint/performance/noImgElement: user-uploaded blob avatar
         <img
@@ -124,7 +124,7 @@ function CharacterMessage({
         {blocks.map((seg, i) =>
           seg.kind === "dialogue" ? (
             <div
-              className="w-fit max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-muted px-3.5 py-2 text-[13px] text-foreground leading-[1.7]"
+              className="w-fit max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-orange-500 px-3.5 py-2 text-[13px] text-white leading-[1.7] dark:bg-orange-500/90"
               // biome-ignore lint/suspicious/noArrayIndexKey: roleplay segments have no stable id
               key={`${i}-d`}
             >
@@ -199,7 +199,7 @@ export function AichatMessages({
                 <div
                   className={cn(
                     "w-fit max-w-[78%] whitespace-pre-wrap rounded-2xl rounded-br-md px-3.5 py-2 text-[13px] leading-[1.7]",
-                    "bg-primary text-primary-foreground"
+                    "bg-blue-500 text-white"
                   )}
                 >
                   <MessageResponse>{text}</MessageResponse>

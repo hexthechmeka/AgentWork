@@ -1,14 +1,22 @@
 "use client";
 
+import { SlidersHorizontalIcon } from "lucide-react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import useSWR from "swr";
 import { DataStreamHandler } from "@/components/chat/data-stream-handler";
-import { MultimodalInput } from "@/components/chat/multimodal-input";
+import { ModelSelectorCompact } from "@/components/chat/multimodal-input";
+import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useActiveChat } from "@/hooks/use-active-chat";
 import type { Persona } from "@/lib/db/schema";
-import type { Attachment } from "@/lib/types";
 import { fetcher } from "@/lib/utils";
+import { AichatComposer } from "./aichat-composer";
 import { AichatMessages } from "./aichat-messages";
 import { getAichatKey } from "./aichat-sidebar";
 
@@ -46,6 +54,53 @@ function PersonaHeader({ persona }: { persona?: Persona }) {
   );
 }
 
+function ChatSettingsToolbar({
+  selectedModelId,
+  onModelChange,
+  personaId,
+}: {
+  selectedModelId: string;
+  onModelChange: (modelId: string) => void;
+  personaId?: string;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          aria-label="채팅방 설정"
+          className="size-8 rounded-full border border-border/40 bg-card/80 text-muted-foreground shadow-sm hover:text-foreground"
+          size="icon"
+          variant="ghost"
+        >
+          <SlidersHorizontalIcon className="size-4" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="flex w-64 flex-col gap-3 p-3"
+        sideOffset={8}
+      >
+        <p className="font-medium text-[13px] text-foreground">채팅방 설정</p>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[11px] text-muted-foreground">모델</span>
+          <ModelSelectorCompact
+            onModelChange={onModelChange}
+            selectedModelId={selectedModelId}
+          />
+        </div>
+        {personaId ? (
+          <Link
+            className="text-[12px] text-muted-foreground hover:text-foreground"
+            href={`/aichat/${personaId}/edit`}
+          >
+            캐릭터 설정 편집
+          </Link>
+        ) : null}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function AichatChatPane() {
   const pathname = usePathname();
   const hasChat = pathname?.startsWith("/aichat/chat/") ?? false;
@@ -59,13 +114,9 @@ export function AichatChatPane() {
     stop,
     input,
     setInput,
-    visibilityType,
     isReadonly,
-    isLoading,
     currentModelId,
     setCurrentModelId,
-    currentEffort,
-    setCurrentEffort,
   } = useActiveChat();
 
   const { data } = useSWR<AichatResponse>(getAichatKey(), fetcher, {
@@ -74,8 +125,6 @@ export function AichatChatPane() {
   const activePersonaId = data?.chats.find((c) => c.id === chatId)?.personaId;
   const persona = data?.personas.find((p) => p.id === activePersonaId);
 
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-
   const stopRef = useRef(stop);
   stopRef.current = stop;
   const prevChatIdRef = useRef(chatId);
@@ -83,7 +132,6 @@ export function AichatChatPane() {
     if (prevChatIdRef.current !== chatId) {
       prevChatIdRef.current = chatId;
       stopRef.current();
-      setAttachments([]);
     }
   }, [chatId]);
 
@@ -103,6 +151,14 @@ export function AichatChatPane() {
       <PersonaHeader persona={persona} />
 
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="absolute top-2 right-2 z-10">
+          <ChatSettingsToolbar
+            onModelChange={setCurrentModelId}
+            personaId={persona?.id}
+            selectedModelId={currentModelId}
+          />
+        </div>
+
         <AichatMessages
           greeting={
             <div className="flex flex-col items-center gap-3 px-4 text-center">
@@ -131,21 +187,12 @@ export function AichatChatPane() {
           status={status}
         />
 
-        <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 bg-background px-2 pb-3 md:px-4 md:pb-4">
+        <div className="sticky bottom-0 z-1 w-full bg-background">
           {isReadonly ? null : (
-            <MultimodalInput
-              attachments={attachments}
+            <AichatComposer
               chatId={chatId}
               input={input}
-              isLoading={isLoading}
-              messages={messages}
-              onEffortChange={setCurrentEffort}
-              onModelChange={setCurrentModelId}
-              selectedEffort={currentEffort}
-              selectedModelId={currentModelId}
-              selectedVisibilityType={visibilityType}
               sendMessage={sendMessage}
-              setAttachments={setAttachments}
               setInput={setInput}
               setMessages={setMessages}
               status={status}

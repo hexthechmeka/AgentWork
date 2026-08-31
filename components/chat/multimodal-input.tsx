@@ -995,7 +995,7 @@ function PureModelSelectorCompact({
   );
 }
 
-const ModelSelectorCompact = memo(PureModelSelectorCompact);
+export const ModelSelectorCompact = memo(PureModelSelectorCompact);
 
 const EFFORT_LABELS: Record<EffortLevel, string> = {
   high: "높음",
