@@ -1,6 +1,7 @@
 "use client";
 
 import type { UseChatHelpers } from "@ai-sdk/react";
+import { RotateCcwIcon } from "lucide-react";
 import {
   Conversation,
   ConversationContent,
@@ -104,9 +105,13 @@ function stripMeta(text: string): string {
 function CharacterMessage({
   text,
   persona,
+  onReroll,
+  busy,
 }: {
   text: string;
   persona?: Persona;
+  onReroll?: () => void;
+  busy?: boolean;
 }) {
   const cleaned = stripMeta(text) || text;
   const segments = parseRoleplay(cleaned);
@@ -116,7 +121,7 @@ function CharacterMessage({
       : [{ kind: "narration" as const, text: cleaned }];
 
   return (
-    <div className="flex flex-row items-start gap-2.5">
+    <div className="group/msg flex flex-row items-start gap-2.5">
       <PersonaAvatar persona={persona} />
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         {blocks.map((seg, i) =>
@@ -138,6 +143,17 @@ function CharacterMessage({
             </p>
           )
         )}
+        {onReroll ? (
+          <button
+            className="mt-0.5 flex w-fit items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 disabled:opacity-40 group-hover/msg:opacity-100"
+            disabled={busy}
+            onClick={onReroll}
+            type="button"
+          >
+            <RotateCcwIcon className="size-3" />
+            {busy ? "생성 중…" : "다시 생성"}
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -195,16 +211,25 @@ export function AichatMessages({
   status,
   persona,
   greeting,
+  onReroll,
 }: {
   messages: ChatMessage[];
   status: UseChatHelpers<ChatMessage>["status"];
   persona?: Persona;
   greeting?: React.ReactNode;
+  onReroll?: () => void;
 }) {
   const last = messages.at(-1);
-  const awaitingReply =
-    (status === "submitted" || status === "streaming") &&
-    last?.role !== "assistant";
+  const busy = status === "submitted" || status === "streaming";
+  const awaitingReply = busy && last?.role !== "assistant";
+
+  const hasUserTurn = messages.some((m) => m.role === "user");
+  let lastAssistantId: string | undefined;
+  for (const m of messages) {
+    if (m.role === "assistant") {
+      lastAssistantId = m.id;
+    }
+  }
 
   if (messages.length === 0) {
     return (
@@ -229,7 +254,17 @@ export function AichatMessages({
             return <TypingBubble key={message.id} persona={persona} />;
           }
           return (
-            <CharacterMessage key={message.id} persona={persona} text={text} />
+            <CharacterMessage
+              busy={busy}
+              key={message.id}
+              onReroll={
+                onReroll && hasUserTurn && message.id === lastAssistantId
+                  ? onReroll
+                  : undefined
+              }
+              persona={persona}
+              text={text}
+            />
           );
         })}
 

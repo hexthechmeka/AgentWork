@@ -9,7 +9,9 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import useSWR, { useSWRConfig } from "swr";
+import { deleteTrailingMessages } from "@/app/(chat)/actions";
 import { DataStreamHandler } from "@/components/chat/data-stream-handler";
 import { ModelSelectorCompact } from "@/components/chat/multimodal-input";
 import { Button } from "@/components/ui/button";
@@ -364,12 +366,29 @@ export function AichatChatPane() {
     sendMessage,
     status,
     stop,
+    regenerate,
     input,
     setInput,
     isReadonly,
     currentModelId,
     setCurrentModelId,
   } = useActiveChat();
+
+  const handleReroll = useCallback(async () => {
+    const lastUser = messages.findLast((m) => m.role === "user");
+    if (!lastUser) {
+      return;
+    }
+    try {
+      // Drop the old reply (and re-insertable user turn) from the DB so the
+      // regenerate request doesn't collide on message ids.
+      await deleteTrailingMessages({ id: lastUser.id });
+    } catch {
+      toast.error("다시 생성에 실패했습니다.");
+      return;
+    }
+    regenerate();
+  }, [messages, regenerate]);
 
   const { data } = useSWR<AichatResponse>(getAichatKey(), fetcher, {
     revalidateOnFocus: false,
@@ -449,6 +468,7 @@ export function AichatChatPane() {
               </div>
             }
             messages={messages}
+            onReroll={isReadonly ? undefined : handleReroll}
             persona={persona}
             status={status}
           />
