@@ -165,10 +165,15 @@ function stripMeta(text: string): string {
 // Strip leftover markup the model sometimes emits: [DEV] tags and fragments,
 // empty / short bracketed spans, stray square brackets, and chat-template or
 // pseudo-HTML tokens (<|...|>, <br>, </i>, <|eot_id|> …).
+// Placeholder parentheticals the model uses to skip describing an action.
+const SKIP_PLACEHOLDER =
+  /[([（]\s*(?:표시\s*(?:하지|되지)?\s*않(?:은|음|는)|묘사\s*(?:생략|안\s*함)|생략|중략|action not shown|hidden|redacted)[^)\]）\n]*[)\]）]/gi;
+
 function stripArtifacts(text: string): string {
   return text
     .replace(/\[dev\][\s\S]*?\[\/dev\]/gi, "") // whole [DEV] … [/DEV] block
     .replace(/\[\s*\/?\s*dev\s*\]/gi, "") // stray/unclosed [DEV] or [/DEV]
+    .replace(SKIP_PLACEHOLDER, "") // (표시하지 않은 동작) 등
     .replace(/<[/|]?[a-z0-9_ |]{0,24}>/gi, "") // <|br> </i> <|eot_id|> <|i| >
     .replace(/\[\s*\]/g, "") // empty [ ]
     .replace(/[[\]]/g, "") // strip stray brackets, keep the text between
