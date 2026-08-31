@@ -12,11 +12,13 @@ import {
   isNull,
   lt,
   type SQL,
+  sql,
 } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import type { ArtifactKind } from "@/components/chat/artifact";
 import type { VisibilityType } from "@/components/chat/visibility-selector";
+import { OWNER_EMAIL } from "../constants";
 import { ChatbotError } from "../errors";
 import { generateUUID } from "../utils";
 import {
@@ -26,10 +28,12 @@ import {
   document,
   message,
   project,
+  providerLimit,
   type Suggestion,
   stream,
   suggestion,
   type User,
+  usageEvent,
   user,
   vote,
 } from "./schema";
@@ -58,16 +62,46 @@ export async function createUser(email: string, password: string) {
   }
 }
 
-export async function createGuestUser() {
-  const email = `guest-${Date.now()}`;
-  const password = generateHashedPassword(generateUUID());
-
+// Single-user private deployment: instead of minting a throwaway
+// `guest-<timestamp>` user on every cookieless visit (which orphaned all
+// chat history whenever the JWT cookie was absent — new browser, new PC,
+// cleared cookies, 30-day expiry), resolve every anonymous session to one
+// stable account keyed by OWNER_EMAIL. Same userId everywhere → history
+// follows the user across devices with no login screen.
+export async function getOrCreateOwnerUser() {
   try {
-    return await db.insert(user).values({ email, password }).returning({
-      email: user.email,
-      id: user.id,
-    });
+    const existing = await db
+      .select({ email: user.email, id: user.id })
+      .from(user)
+      .where(eq(user.email, OWNER_EMAIL))
+      .limit(1);
+
+    if (existing.length > 0) {
+      return existing;
+    }
+
+    const password = generateHashedPassword(generateUUID());
+    const inserted = await db
+      .insert(user)
+      .values({ email: OWNER_EMAIL, password })
+      .returning({ email: user.email, id: user.id });
+
+    return inserted;
   } catch (error) {
+    // Lost an insert race with a concurrent first request — the row now
+    // exists, so just read it back.
+    try {
+      const existing = await db
+        .select({ email: user.email, id: user.id })
+        .from(user)
+        .where(eq(user.email, OWNER_EMAIL))
+        .limit(1);
+      if (existing.length > 0) {
+        return existing;
+      }
+    } catch {
+      // fall through to the original error
+    }
     throw new ChatbotError("bad_request:database", { cause: error });
   }
 }
@@ -172,20 +206,21 @@ export async function getProjectWithChatsById({
   userId: string;
 }) {
   try {
-    const [selectedProject] = await db
-      .select()
-      .from(project)
-      .where(and(eq(project.id, id), eq(project.userId, userId)));
+    const [[selectedProject], projectChats] = await Promise.all([
+      db
+        .select()
+        .from(project)
+        .where(and(eq(project.id, id), eq(project.userId, userId))),
+      db
+        .select()
+        .from(chat)
+        .where(eq(chat.projectId, id))
+        .orderBy(desc(chat.createdAt)),
+    ]);
 
     if (!selectedProject) {
       return null;
     }
-
-    const projectChats = await db
-      .select()
-      .from(chat)
-      .where(eq(chat.projectId, id))
-      .orderBy(desc(chat.createdAt));
 
     return { ...selectedProject, chats: projectChats };
   } catch (error) {
@@ -675,5 +710,200 @@ export async function getStreamIdsByChatId({ chatId }: { chatId: string }) {
     return streamIds.map(({ id }) => id);
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+// ─── Usage tracking & provider limits ──────────────────────────────────────
+
+const USAGE_PROVIDERS = ["anthropic", "glm"] as const;
+export type UsageProvider = (typeof USAGE_PROVIDERS)[number];
+
+export async function recordUsageEvent({
+  userId,
+  provider,
+  modelId,
+  inputTokens,
+  outputTokens,
+  cachedInputTokens,
+  costUsd,
+}: {
+  userId: string;
+  provider: UsageProvider;
+  modelId: string;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  costUsd: number;
+}) {
+  try {
+    await db.insert(usageEvent).values({
+      cachedInputTokens: Math.round(cachedInputTokens),
+      costUsd: costUsd.toFixed(8),
+      inputTokens: Math.round(inputTokens),
+      modelId,
+      outputTokens: Math.round(outputTokens),
+      provider,
+      userId,
+    });
+  } catch (error) {
+    // Usage logging must never break a chat turn.
+    console.error("recordUsageEvent failed:", error);
+  }
+}
+
+async function ensureProviderLimits(): Promise<void> {
+  await db
+    .insert(providerLimit)
+    .values(USAGE_PROVIDERS.map((provider) => ({ provider })))
+    .onConflictDoNothing();
+}
+
+export async function getProviderLimits() {
+  await ensureProviderLimits();
+  return db.select().from(providerLimit);
+}
+
+export async function setProviderLimit({
+  provider,
+  softLimitUsd,
+  hardLimitUsd,
+}: {
+  provider: UsageProvider;
+  softLimitUsd: number | null;
+  hardLimitUsd: number | null;
+}) {
+  await ensureProviderLimits();
+  await db
+    .update(providerLimit)
+    .set({
+      hardLimitUsd: hardLimitUsd === null ? null : hardLimitUsd.toFixed(2),
+      softLimitUsd: softLimitUsd === null ? null : softLimitUsd.toFixed(2),
+      updatedAt: new Date(),
+    })
+    .where(eq(providerLimit.provider, provider));
+}
+
+export async function resetProviderPeriod({
+  provider,
+}: {
+  provider: UsageProvider;
+}) {
+  await ensureProviderLimits();
+  await db
+    .update(providerLimit)
+    .set({ periodStart: new Date(), updatedAt: new Date() })
+    .where(eq(providerLimit.provider, provider));
+}
+
+/** Total USD cost for one provider since its current period start. */
+export async function getProviderPeriodCost({
+  userId,
+  provider,
+  periodStart,
+}: {
+  userId: string;
+  provider: UsageProvider;
+  periodStart: Date;
+}): Promise<number> {
+  const [row] = await db
+    .select({ total: sql<string>`coalesce(sum(${usageEvent.costUsd}), 0)` })
+    .from(usageEvent)
+    .where(
+      and(
+        eq(usageEvent.userId, userId),
+        eq(usageEvent.provider, provider),
+        gte(usageEvent.createdAt, periodStart)
+      )
+    );
+  return Number(row?.total ?? 0);
+}
+
+/**
+ * Per-provider usage since period start: token totals, cost, the derived
+ * hard-lock flag, and a daily cost series for the sparkline.
+ */
+export async function getUsageSummary({ userId }: { userId: string }) {
+  const limits = await getProviderLimits();
+
+  const perProvider = await Promise.all(
+    limits.map(async (limit) => {
+      const { periodStart } = limit;
+      const provider = limit.provider as UsageProvider;
+
+      const [totals] = await db
+        .select({
+          cachedInputTokens: sql<string>`coalesce(sum(${usageEvent.cachedInputTokens}), 0)`,
+          costUsd: sql<string>`coalesce(sum(${usageEvent.costUsd}), 0)`,
+          inputTokens: sql<string>`coalesce(sum(${usageEvent.inputTokens}), 0)`,
+          outputTokens: sql<string>`coalesce(sum(${usageEvent.outputTokens}), 0)`,
+        })
+        .from(usageEvent)
+        .where(
+          and(
+            eq(usageEvent.userId, userId),
+            eq(usageEvent.provider, provider),
+            gte(usageEvent.createdAt, periodStart)
+          )
+        );
+
+      const costUsd = Number(totals?.costUsd ?? 0);
+      const hardLimitUsd =
+        limit.hardLimitUsd === null ? null : Number(limit.hardLimitUsd);
+      const softLimitUsd =
+        limit.softLimitUsd === null ? null : Number(limit.softLimitUsd);
+
+      return {
+        cachedInputTokens: Number(totals?.cachedInputTokens ?? 0),
+        costUsd,
+        hardLimitUsd,
+        hardLocked:
+          hardLimitUsd !== null && hardLimitUsd > 0 && costUsd >= hardLimitUsd,
+        inputTokens: Number(totals?.inputTokens ?? 0),
+        outputTokens: Number(totals?.outputTokens ?? 0),
+        periodStart: periodStart.toISOString(),
+        provider,
+        softExceeded:
+          softLimitUsd !== null && softLimitUsd > 0 && costUsd >= softLimitUsd,
+        softLimitUsd,
+      };
+    })
+  );
+
+  return perProvider;
+}
+
+/** Backstop check used by the chat route before calling a provider. */
+export async function isProviderHardLocked({
+  userId,
+  provider,
+}: {
+  userId: string;
+  provider: UsageProvider;
+}): Promise<boolean> {
+  try {
+    await ensureProviderLimits();
+    const [limit] = await db
+      .select()
+      .from(providerLimit)
+      .where(eq(providerLimit.provider, provider));
+
+    if (!limit || limit.hardLimitUsd === null) {
+      return false;
+    }
+    const hardLimitUsd = Number(limit.hardLimitUsd);
+    if (hardLimitUsd <= 0) {
+      return false;
+    }
+
+    const cost = await getProviderPeriodCost({
+      periodStart: limit.periodStart,
+      provider,
+      userId,
+    });
+    return cost >= hardLimitUsd;
+  } catch (error) {
+    // Fail open — a metering hiccup shouldn't block all chat.
+    console.error("isProviderHardLocked failed:", error);
+    return false;
   }
 }

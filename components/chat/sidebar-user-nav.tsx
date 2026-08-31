@@ -18,7 +18,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { guestRegex } from "@/lib/constants";
+import { isAnonymousEmail } from "@/lib/constants";
 import { LoaderIcon } from "./icons";
 import { toast } from "./toast";
 
@@ -35,7 +35,7 @@ export function SidebarUserNav({ user }: { user: User }) {
   const { data, status } = useSession();
   const { setTheme, resolvedTheme } = useTheme();
 
-  const isGuest = guestRegex.test(data?.user?.email ?? "");
+  const isGuest = isAnonymousEmail(data?.user?.email);
   const handleThemeSelect = useCallback(() => {
     setTheme(resolvedTheme === "dark" ? "light" : "dark");
   }, [resolvedTheme, setTheme]);

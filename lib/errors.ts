@@ -86,6 +86,8 @@ export function getMessageByErrorCode(errorCode: ErrorCode): string {
   switch (errorCode) {
     case "bad_request:api":
       return "요청을 처리할 수 없습니다. 입력값을 확인하고 다시 시도해주세요.";
+    case "rate_limit:api":
+      return "한도에 도달하여 메시지를 전송할 수 없습니다. 한도 재설정이 필요합니다.";
 
     case "unauthorized:auth":
       return "계속하려면 로그인이 필요합니다.";

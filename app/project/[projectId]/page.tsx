@@ -5,13 +5,10 @@ import { getProjectWithChatsById } from "@/lib/db/queries";
 
 export default async function ProjectPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ chat?: string }>;
 }) {
   const { projectId } = await params;
-  const { chat: chatIdParam } = await searchParams;
   const session = await auth();
 
   if (!session?.user) {
@@ -27,23 +24,15 @@ export default async function ProjectPage({
     notFound();
   }
 
-  const planningChats = project.chats.filter((c) => c.kind !== "unified");
-  const requestedChat =
-    chatIdParam && chatIdParam !== "new"
-      ? planningChats.find((c) => c.id === chatIdParam)
-      : undefined;
-  const existingChatId =
-    chatIdParam === "new"
-      ? undefined
-      : (requestedChat?.id ?? planningChats.at(0)?.id);
-  const unifiedChatId = project.chats.find((c) => c.kind === "unified")?.id;
-
+  // The active chat (and whether we show the overview vs. the workspace) is
+  // driven entirely by the `?chat=` query param, read client-side in
+  // ProjectView. That keeps switching between chats inside an open project a
+  // pure client transition — no server round-trip, no remount.
   return (
     <ProjectView
-      existingChatId={existingChatId}
+      chats={project.chats}
       projectId={project.id}
       projectName={project.name}
-      unifiedChatId={unifiedChatId}
     />
   );
 }

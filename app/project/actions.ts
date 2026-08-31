@@ -3,9 +3,24 @@
 import { generateText } from "ai";
 import { auth } from "@/app/(auth)/auth";
 import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
+import { providerForModel } from "@/lib/ai/pricing";
 import { getLanguageModel } from "@/lib/ai/providers";
-import { getChatById, getMessagesByChatId } from "@/lib/db/queries";
+import { trackUsage } from "@/lib/ai/usage";
+import {
+  getChatById,
+  getMessagesByChatId,
+  isProviderHardLocked,
+} from "@/lib/db/queries";
 import { convertToUIMessages, getTextFromMessage } from "@/lib/utils";
+
+async function guardProvider(userId: string, modelId: string) {
+  const provider = providerForModel(modelId);
+  if (provider && (await isProviderHardLocked({ provider, userId }))) {
+    throw new Error(
+      "한도에 도달하여 메시지를 전송할 수 없습니다. 한도 재설정이 필요합니다."
+    );
+  }
+}
 
 const GLM_REVIEW_MODEL_ID = "glm/glm-5.3";
 const ANNOTATED_MARKER = "===ANNOTATED===";
@@ -48,7 +63,7 @@ async function getChatTranscript(chatId: string) {
 }
 
 export async function generateMeetingNotes({ chatId }: { chatId: string }) {
-  await requireChatOwnership(chatId);
+  const session = await requireChatOwnership(chatId);
 
   const transcript = await getChatTranscript(chatId);
 
@@ -56,11 +71,19 @@ export async function generateMeetingNotes({ chatId }: { chatId: string }) {
     return "# 노트\n\n아직 기획 대화 내용이 없습니다. 먼저 좌측에서 대화를 나눠보세요.";
   }
 
-  const { text } = await generateText({
+  await guardProvider(session.user.id, DEFAULT_CHAT_MODEL);
+
+  const { text, usage } = await generateText({
     instructions:
       "너는 회의 노트 작성자야. 주어진 기획 대화를 자유 형식의 노트로 정리해. 마크다운 헤더/불릿을 적절히 써서 핵심 논의사항, 결정사항, 남은 질문을 정리해. 장황하게 쓰지 말고 핵심만 간결하게.",
     model: getLanguageModel(DEFAULT_CHAT_MODEL),
     prompt: transcript,
+  });
+
+  await trackUsage({
+    modelId: DEFAULT_CHAT_MODEL,
+    usage,
+    userId: session.user.id,
   });
 
   return text;
@@ -80,11 +103,19 @@ export async function updateMeetingNotesIncremental({
     throw new Error("Unauthorized");
   }
 
-  const { text } = await generateText({
+  await guardProvider(session.user.id, NOTES_LIVE_MODEL_ID);
+
+  const { text, usage } = await generateText({
     instructions:
       "너는 실시간 회의 노트 작성자야. 기존 노트에 방금 오간 대화 한 턴만 반영해서 노트를 업데이트해. 전체를 다시 쓰지 말고 기존 구조와 이미 있는 내용은 최대한 유지한 채, 새로 나온 내용만 자연스러운 위치에 추가하거나 관련 있는 기존 항목을 수정해. 마크다운 형식을 유지해.",
     model: getLanguageModel(NOTES_LIVE_MODEL_ID),
     prompt: `## 기존 노트\n${previousNotes}\n\n## 방금 오간 대화\n사용자: ${userText}\nClaude: ${assistantText}`,
+  });
+
+  await trackUsage({
+    modelId: NOTES_LIVE_MODEL_ID,
+    usage,
+    userId: session.user.id,
   });
 
   return text;
@@ -99,16 +130,20 @@ export async function generateSpecFromNotes({
   notes: string;
   modelId: string;
 }) {
-  await requireChatOwnership(chatId);
+  const session = await requireChatOwnership(chatId);
 
   const transcript = await getChatTranscript(chatId);
 
-  const { text } = await generateText({
+  await guardProvider(session.user.id, modelId);
+
+  const { text, usage } = await generateText({
     instructions:
       "너는 소프트웨어 구현계획서 작성자야. 주어진 노트와 기획 대화 원문을 바탕으로 정식 구현계획서를 마크다운으로 작성해. 목표, 범위, 주요 기능, 데이터 모델/API 변경, 일정/우선순위, 리스크 섹션을 포함해.",
     model: getLanguageModel(modelId),
     prompt: `## 노트\n${notes}\n\n## 기획 대화 원문\n${transcript}`,
   });
+
+  await trackUsage({ modelId, usage, userId: session.user.id });
 
   return text;
 }
@@ -134,9 +169,11 @@ export async function reviewSpecWithGlm({
   chatId: string;
   spec: string;
 }) {
-  await requireChatOwnership(chatId);
+  const session = await requireChatOwnership(chatId);
 
-  const { text } = await generateText({
+  await guardProvider(session.user.id, GLM_REVIEW_MODEL_ID);
+
+  const { text, usage } = await generateText({
     instructions: `너는 시니어 엔지니어로서 구현계획서를 검토해. 구현 불가능하거나 난이도가 높은 부분, 반드시 짚어야 할 리스크가 있는 지점에만, 원문 중간에 [[GLM: 코멘트]] 형태의 마커를 삽입해 (대괄호 두 개로 감싸는 형식을 정확히 지켜). 첨언은 꼭 필요한 곳에만 최소한으로 넣고, 원문 나머지는 그대로 유지해.
 
 반드시 아래 형식으로만 응답해:
@@ -146,6 +183,12 @@ ${EXPLANATION_MARKER}
 (위 첨언들에 대한 자세한 해설, 채팅 메시지 형태로)`,
     model: getLanguageModel(GLM_REVIEW_MODEL_ID),
     prompt: spec,
+  });
+
+  await trackUsage({
+    modelId: GLM_REVIEW_MODEL_ID,
+    usage,
+    userId: session.user.id,
   });
 
   const annotatedIndex = text.indexOf(ANNOTATED_MARKER);

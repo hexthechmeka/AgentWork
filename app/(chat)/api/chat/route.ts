@@ -30,6 +30,7 @@ import { createDocument } from "@/lib/ai/tools/create-document";
 import { editDocument } from "@/lib/ai/tools/edit-document";
 import { requestSuggestions } from "@/lib/ai/tools/request-suggestions";
 import { updateDocument } from "@/lib/ai/tools/update-document";
+import { trackUsage } from "@/lib/ai/usage";
 import { isProductionEnvironment } from "@/lib/constants";
 import {
   createStreamId,
@@ -38,6 +39,7 @@ import {
   getMessageCountByUserId,
   getMessagesByChatId,
   getProjectById,
+  isProviderHardLocked,
   saveChat,
   saveMessages,
   updateChatTitleById,
@@ -174,6 +176,16 @@ export async function POST(request: Request) {
       chatModel !== GLM_VISION_MODEL_ID
     ) {
       chatModel = GLM_VISION_MODEL_ID;
+    }
+
+    const usageProvider = chatModel.startsWith("glm/") ? "glm" : "anthropic";
+    if (
+      await isProviderHardLocked({
+        provider: usageProvider,
+        userId: session.user.id,
+      })
+    ) {
+      return new ChatbotError("rate_limit:api").toResponse();
     }
 
     await checkIpRateLimit(ipAddress(request));
@@ -446,6 +458,19 @@ export async function POST(request: Request) {
             stream: result.stream,
           })
         );
+
+        (async () => {
+          try {
+            const modelUsage = await result.usage;
+            await trackUsage({
+              modelId: chatModel,
+              usage: modelUsage,
+              userId: session.user.id,
+            });
+          } catch {
+            // usage metering is best-effort
+          }
+        })();
 
         if (titlePromise) {
           try {

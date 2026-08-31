@@ -25,3 +25,7 @@ yarn-error.log*
 /playwright/*
 next-env.d.ts
 tsconfig.tsbuildinfo
+
+# local backups / editor tooling
+.env*.bak
+.claude/
