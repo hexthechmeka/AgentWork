@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AICHAT_MODEL_ID } from "@/lib/ai/aichat-provider";
 import { chatModels } from "@/lib/ai/models";
 import { cn } from "@/lib/utils";
 
@@ -38,7 +39,7 @@ export type PersonaFormValues = {
 
 export const EMPTY_PERSONA: PersonaFormValues = {
   avatarUrl: "",
-  defaultModel: "anthropic/claude-sonnet-5",
+  defaultModel: AICHAT_MODEL_ID,
   exampleDialogue: "",
   name: "",
   openingMessage: "",

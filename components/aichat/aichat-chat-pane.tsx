@@ -13,7 +13,6 @@ import { toast } from "sonner";
 import useSWR, { useSWRConfig } from "swr";
 import { deleteTrailingMessages } from "@/app/(chat)/actions";
 import { DataStreamHandler } from "@/components/chat/data-stream-handler";
-import { ModelSelectorCompact } from "@/components/chat/multimodal-input";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -28,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useActiveChat } from "@/hooks/use-active-chat";
+import { AICHAT_MODEL_ID, AICHAT_MODELS } from "@/lib/ai/aichat-provider";
 import type { Persona } from "@/lib/db/schema";
 import { cn, fetcher } from "@/lib/utils";
 import { AichatComposer } from "./aichat-composer";
@@ -264,6 +264,46 @@ function PlayerPersonaField({
   );
 }
 
+function AichatModelSelect({
+  selectedModelId,
+  onModelChange,
+}: {
+  selectedModelId: string;
+  onModelChange: (modelId: string) => void;
+}) {
+  const value = AICHAT_MODELS.some((m) => m.id === selectedModelId)
+    ? selectedModelId
+    : AICHAT_MODEL_ID;
+
+  const handleChange = useCallback(
+    (next: string) => {
+      onModelChange(next);
+      try {
+        // biome-ignore lint/suspicious/noDocumentCookie: matches the app cookie pattern
+        document.cookie = `chat-model=${encodeURIComponent(next)}; path=/; max-age=31536000`;
+      } catch {
+        // ignore
+      }
+    },
+    [onModelChange]
+  );
+
+  return (
+    <Select onValueChange={handleChange} value={value}>
+      <SelectTrigger className="h-8 text-[12px]" size="sm">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {AICHAT_MODELS.map((m) => (
+          <SelectItem key={m.id} value={m.id}>
+            {m.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function ChatSettingsToolbar({
   chatId,
   selectedModelId,
@@ -301,7 +341,7 @@ function ChatSettingsToolbar({
         <p className="font-medium text-[13px] text-foreground">채팅방 설정</p>
         <div className="flex flex-col gap-1.5">
           <span className="text-[11px] text-muted-foreground">모델</span>
-          <ModelSelectorCompact
+          <AichatModelSelect
             onModelChange={onModelChange}
             selectedModelId={selectedModelId}
           />
