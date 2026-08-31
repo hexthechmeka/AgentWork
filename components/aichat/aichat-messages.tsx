@@ -43,15 +43,23 @@ type Segment = { kind: "dialogue" | "narration"; text: string };
 // off a spoken line so the bubble holds just the words.
 const EDGE_QUOTES = /^[\s"“”„‟'‘’「」『』]+|[\s"“”„‟'‘’「」『』]+$/g;
 
+// Narration is delimited by *asterisks* OR ( parentheses ) — some Korean RP
+// models wrap stage directions in parens instead of stars.
+const NARRATION_CLOSER: Record<string, string> = {
+  "(": ")",
+  "*": "*",
+  "（": "）",
+};
+
 /**
- * Split a roleplay reply on *asterisk* spans: text inside `* *` is narration
- * (italic, outside the bubble); everything else is spoken dialogue and fills
- * a chat bubble. Wrapping quotes on dialogue are stripped.
+ * Split a roleplay reply into narration (inside `* *` or `( )` → italic prose,
+ * outside the bubble) and spoken dialogue (everything else → chat bubble).
+ * Wrapping quotes on dialogue are stripped.
  */
 function parseRoleplay(text: string): Segment[] {
   const segs: Segment[] = [];
   let buf = "";
-  let inAster = false;
+  let closer = ""; // non-empty while inside a narration span
 
   const push = (kind: "dialogue" | "narration") => {
     let t = buf.trim();
@@ -65,14 +73,21 @@ function parseRoleplay(text: string): Segment[] {
   };
 
   for (const ch of text) {
-    if (ch === "*") {
-      push(inAster ? "narration" : "dialogue");
-      inAster = !inAster;
+    if (closer) {
+      if (ch === closer) {
+        push("narration");
+        closer = "";
+      } else {
+        buf += ch;
+      }
+    } else if (NARRATION_CLOSER[ch]) {
+      push("dialogue");
+      closer = NARRATION_CLOSER[ch];
     } else {
       buf += ch;
     }
   }
-  push(inAster ? "narration" : "dialogue");
+  push(closer ? "narration" : "dialogue");
 
   const merged: Segment[] = [];
   for (const s of segs) {
