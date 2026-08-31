@@ -1,6 +1,11 @@
 "use client";
 
-import { SlidersHorizontalIcon } from "lucide-react";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PinIcon,
+  SlidersHorizontalIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef } from "react";
@@ -73,34 +78,55 @@ function PersonaPanel({ persona }: { persona?: Persona }) {
   if (!persona) {
     return null;
   }
-  const cover = persona.panelImageUrl ?? persona.avatarUrl;
+
+  // Gallery-ready: the profile picture is the only image for now. A later
+  // image gallery will fill this list and enable the prev/next controls.
+  const images = persona.avatarUrl ? [persona.avatarUrl] : [];
+  const [image] = images;
+  const hasGallery = images.length > 1;
+
   return (
-    <aside className="hidden w-64 shrink-0 flex-col overflow-y-auto border-border/40 border-r bg-sidebar lg:flex">
-      <div className="relative aspect-[3/4] w-full shrink-0 overflow-hidden bg-muted">
-        {cover ? (
+    <aside className="hidden w-[clamp(320px,30vw,440px)] shrink-0 flex-col items-center gap-3 border-border/40 border-r bg-background p-3 lg:flex">
+      <div className="relative min-h-[360px] w-full max-w-[400px] flex-1 overflow-hidden rounded-2xl border border-border/40 bg-muted shadow-xl">
+        {image ? (
           // biome-ignore lint/performance/noImgElement: user-uploaded blob art
           <img
             alt={persona.name}
             className="size-full object-cover"
-            src={cover}
+            src={image}
           />
         ) : (
-          <div className="flex size-full items-center justify-center text-2xl text-muted-foreground">
+          <div className="flex size-full items-center justify-center text-3xl text-muted-foreground">
             {persona.name.slice(0, 2)}
           </div>
         )}
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-3">
-          <p className="font-semibold text-[15px] text-white leading-tight">
-            {persona.name}
-          </p>
-          {persona.tagline ? (
-            <p className="mt-0.5 text-[11px] text-white/70">
-              {persona.tagline}
-            </p>
-          ) : null}
+
+        <span className="absolute top-2.5 left-2.5 rounded-md bg-black/55 px-2 py-0.5 font-medium text-[11px] text-white backdrop-blur-sm">
+          일반
+        </span>
+
+        <div className="absolute top-2.5 right-2.5 flex items-center gap-0.5 rounded-full bg-black/45 p-1 backdrop-blur-sm">
+          <button
+            aria-label="이전 이미지"
+            className="flex size-6 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30"
+            disabled={!hasGallery}
+            type="button"
+          >
+            <ChevronLeftIcon className="size-4" />
+          </button>
+          <PinIcon className="size-3.5 text-white/70" />
+          <button
+            aria-label="다음 이미지"
+            className="flex size-6 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30"
+            disabled={!hasGallery}
+            type="button"
+          >
+            <ChevronRightIcon className="size-4" />
+          </button>
         </div>
       </div>
-      <div className="flex flex-col gap-2 p-3">
+
+      <div className="flex w-full max-w-[400px] shrink-0 flex-col gap-2">
         {persona.tags.length > 0 ? (
           <div className="flex flex-wrap gap-1">
             {persona.tags.map((t) => (
