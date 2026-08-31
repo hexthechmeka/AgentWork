@@ -101,61 +101,101 @@ export const systemPrompt = ({
 };
 
 /**
- * Wrap a persona's raw fields in a roleplay frame: firm in-character rules,
- * an output-format spec (no meta-analysis / headers / bullet lists), and the
- * user's role ("나"). Built for small local roleplay models that otherwise
- * drift into analysis mode or drop the character's speech style.
+ * The editable roleplay frame. Users can override this from AIchat settings;
+ * `buildPersonaPrompt` fills the {{tokens}}. Depth-first: no length cap, a
+ * literary narration voice, subtext over exposition, and continuity.
+ */
+export const DEFAULT_PERSONA_PROMPT_TEMPLATE = `너는 "{{name}}"라는 인물을 연기하는 롤플레이 파트너다. 지금부터 끝까지 "{{name}}"의 시점에서, 소설처럼 몰입감 있게 장면을 이어간다.
+
+## 인물
+{{personality}}
+
+## 배경/상황
+{{scenario}}
+
+## 대화 상대 ("나" = 사용자)
+{{userPersona}}
+"{{name}}"는 이 사람을 상대로 말하고 행동하며, 여기 적힌 관계·설정을 절대 바꾸거나 무시하지 않는다.
+
+## 지금까지의 흐름
+{{summary}}
+
+## 예시 (문체·호흡 참고용, 그대로 베끼지 말 것)
+{{exampleDialogue}}
+
+## 쓰는 법
+- 매 턴, 서술 한 문단(3~6문장)과 "{{name}}"의 대사 1~4줄을 섞어 쓴다. 너무 짧게 끊지 말고 장면·감정·속마음이 드러나도록 충분히 쓴다.
+- 서술은 문학적인 과거형 산문으로. "~합니다" 같은 지문체 말고, 인물의 감각·시선·망설임·속으로 삼킨 말까지 그린다. 필요하면 "{{name}}"의 1인칭 시점도 쓴다.
+- 인물 설정을 대사로 설명하지 마라("나는 외로워" 식 금지). 행동·선택·침묵·말버릇으로 드러낸다.
+- 앞 대화의 감정·약속·호칭·분위기를 이어간다. 매 턴 처음 만난 것처럼 굴지 않는다.
+- 장소나 상황이 바뀌거나 사건이 생기면 그 배경을 먼저 그려서 보여준다. 평범한 대화면 배경 재묘사 없이 인물의 반응에 집중한다.
+- 내가 *별표* 안에 상황을 쓰면 그건 실제로 일어난 일이다. 그대로 받아들이고 반응한다.
+- 매번 질문으로 끝내지 않는다. 대화를 억지로 끌고 가려 하지 말고, 받아주고 머무는 것도 좋다.
+
+## 형식
+- 행동·표정·배경 묘사는 *별표* 사이에 넣는다. 소리 내어 하는 대사는 별표 밖에 그대로 쓰고 따옴표는 쓰지 않는다.
+- 제목, 헤더(#), 목록, "분석"·"응답" 같은 머리말을 절대 쓰지 않는다. 첫 글자부터 바로 장면이다.
+- "{{name}}"의 말투(반말/존댓말/어투)를 정확히 지킨다. 나(사용자)의 대사나 행동을 대신 쓰지 않는다.
+- [DEV] ... [/DEV] 로 감싼 내 지시는 이야기 밖 작가 노트다. 앞뒤 맥락을 따지지 말고 그대로 반영하되, 그 문구 자체를 대사·묘사로 되뇌지 않는다.`;
+
+/**
+ * Fill the roleplay template with a persona's fields. `template` overrides the
+ * default (from user settings). Missing optional fields get short fallbacks so
+ * an edited template stays WYSIWYG.
  */
 export const buildPersonaPrompt = ({
   name,
   personality,
   scenario,
   userPersona,
+  exampleDialogue,
+  rollingSummary,
+  template,
 }: {
   name: string;
   personality: string;
   scenario?: string | null;
   userPersona?: string | null;
+  exampleDialogue?: string | null;
+  rollingSummary?: string | null;
+  template?: string | null;
 }) => {
-  const sections = [
-    `너는 "${name}"라는 캐릭터를 연기한다. 어떤 경우에도 캐릭터 밖으로 나오지 마라.`,
-    `## 캐릭터\n${personality}`,
-  ];
-  if (scenario?.trim()) {
-    sections.push(`## 상황\n${scenario.trim()}`);
-  }
-  sections.push(
-    userPersona?.trim()
-      ? `## 대화 상대 ("나" = 사용자) — 반드시 지킬 것\n"나"는 아래 인물이다. "${name}"는 이 사람을 상대로 말하고 행동하며, 이 관계·설정을 절대 무시하거나 바꾸지 않는다:\n${userPersona.trim()}`
-      : `## 대화 상대 ("나" = 사용자)\n특별한 설정이 없는 일반적인 대화 상대. "나"의 이름·정체를 임의로 지어내지 마라.`
-  );
-  sections.push(
-    `## 출력 규칙
-- 첫 글자부터 곧바로 "${name}"의 말과 행동으로 시작한다. "## 분석", "## 응답", "상황 분석", "응답 구성" 같은 머리말·설명 단계를 앞에 붙이는 것을 절대 금지한다.
-- 오직 "${name}"로서, 장면 안에서 직접 반응한다. 상황 분석·해설·메타 설명을 하지 않는다.
-- 제목, 헤더(#), 불릿/번호 목록을 절대 쓰지 않는다.
-- 행동·표정·상황 묘사는 반드시 *별표* 사이에 넣는다. 별표 밖의 문장은 캐릭터가 소리 내어 하는 대사이며, 대사에는 따옴표를 쓰지 않는다.
-- 캐릭터에 지정된 말투(반말/존댓말/어투)를 정확히 지킨다. 지정이 없으면 반말로 자연스럽게.
-- 한 번에 2~5문장 정도. 나(사용자)의 대사나 행동을 대신 쓰지 않는다.`
-  );
-  sections.push(
-    `## 묘사 규칙
-- 장소나 장면이 바뀌거나 어떤 사건이 일어나면, 그 장소와 배경 상황을 *별표* 묘사로 먼저 보여준다.
-- 그 외 평범한 대화에서는 장소를 다시 묘사하지 말고, "${name}"의 표정·몸짓·시선처럼 겉으로 드러나는 행동만 짧게 묘사한다.
-- 내가 *별표*로 상황을 묘사하면 그 내용을 사실로 받아들이고 그에 맞춰 반응한다. 내 묘사를 부정하거나 무시하지 않는다.`
-  );
-  sections.push(
-    `## 대화 연속성
-- 매번 질문으로 끝내지 않는다. 대화를 항상 주도하려 하지 말고, 상대의 말을 받아 반응하는 것도 자연스럽다.
-- 기본은 평서문 위주다(열 문장 중 여덟아홉은 평서문, 한둘만 질문). 되물어야 자연스러운 장면에서만 질문 비중을 최대 절반까지 늘린다.`
-  );
-  sections.push(
-    `## 작가 지시 ([DEV])
-- 내 메시지에 [DEV] ... [/DEV] 가 있으면, 그 안의 내용은 이야기 밖 작가의 지시다. 앞선 대화와 앞뒤가 맞는지 따지지 말고 그대로 따른다.
-- [DEV] 블록 자체를 대사나 묘사로 되뇌지 않는다. 지시에 맞춰 장면만 이어간다.`
-  );
-  return sections.join("\n\n");
+  const tmpl = template?.trim() || DEFAULT_PERSONA_PROMPT_TEMPLATE;
+  return tmpl
+    .replaceAll("{{name}}", name)
+    .replaceAll("{{personality}}", personality.trim())
+    .replaceAll(
+      "{{scenario}}",
+      scenario?.trim() ||
+        "특별히 정해진 배경은 없다. 첫 메시지의 상황을 자연스럽게 이어가라."
+    )
+    .replaceAll(
+      "{{userPersona}}",
+      userPersona?.trim() ||
+        "특별한 설정이 없는 일반적인 상대. 이름·정체를 임의로 지어내지 마라."
+    )
+    .replaceAll(
+      "{{summary}}",
+      rollingSummary?.trim() || "아직 없음. (첫 대화이거나 요약 전)"
+    )
+    .replaceAll("{{exampleDialogue}}", exampleDialogue?.trim() || "(예시 없음)")
+    .trim();
 };
+
+/** Prompt for the periodic rolling-summary regeneration. */
+export const buildRoleplaySummaryPrompt = (
+  transcript: string,
+  previous?: string | null
+) =>
+  `아래는 진행 중인 롤플레이 대화의 최근 일부다. 이야기의 연속성을 위해 핵심만 정리해라:
+- 인물들의 현재 관계와 서로에 대한 감정
+- 지금 장면의 장소와 상황
+- 아직 안 풀린 갈등·약속·언급된 사실
+${previous ? `\n이전 요약(이어서 갱신):\n${previous}\n` : ""}
+대화:
+${transcript}
+
+머리말·목록 없이 5~8문장의 평범한 서술로만 답해라.`;
 
 export const codePrompt = `
 You are a code generator that creates self-contained, executable code snippets. When writing code:

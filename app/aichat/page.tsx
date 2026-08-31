@@ -37,7 +37,7 @@ export default async function AichatHome() {
             아직 캐릭터가 없습니다. “새 캐릭터”로 만들어보세요.
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+          <div className="no-scrollbar -mx-6 flex snap-x gap-4 overflow-x-auto px-6 pb-2">
             {personas.map((persona) => (
               <PersonaCard key={persona.id} persona={persona} />
             ))}

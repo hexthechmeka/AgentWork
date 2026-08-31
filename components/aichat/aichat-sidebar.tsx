@@ -8,6 +8,7 @@ import {
   MessageSquarePlusIcon,
   PencilIcon,
   PlusIcon,
+  SettingsIcon,
   Trash2Icon,
 } from "lucide-react";
 import Link from "next/link";
@@ -504,6 +505,17 @@ export function AichatSidebar() {
 
         <SidebarFooter className="gap-1 border-sidebar-border border-t px-2 pt-2 pb-3">
           <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                className="h-8 text-[13px] text-sidebar-foreground/50"
+              >
+                <Link href="/aichat/settings">
+                  <SettingsIcon className="size-4" />
+                  롤플레이 설정
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton
                 asChild

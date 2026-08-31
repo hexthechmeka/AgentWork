@@ -9,6 +9,7 @@ import {
 const createSchema = z.object({
   avatarUrl: z.string().url().nullish(),
   defaultModel: z.string().min(1),
+  exampleDialogue: z.string().max(12_000).nullish(),
   name: z.string().min(1).max(120),
   openingMessage: z.string().max(8000).nullish(),
   panelImageUrl: z.string().url().nullish(),

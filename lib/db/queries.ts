@@ -34,6 +34,7 @@ import {
   project,
   providerLimit,
   type Suggestion,
+  setting,
   stream,
   suggestion,
   type User,
@@ -930,6 +931,7 @@ type PersonaInput = {
   openingMessage?: string | null;
   scenario?: string | null;
   userPersona?: string | null;
+  exampleDialogue?: string | null;
   tags?: string[];
 };
 
@@ -943,6 +945,7 @@ export async function createPersona({
       .values({
         avatarUrl: input.avatarUrl ?? null,
         defaultModel: input.defaultModel,
+        exampleDialogue: input.exampleDialogue ?? null,
         name: input.name,
         openingMessage: input.openingMessage ?? null,
         ownerId,
@@ -1014,6 +1017,9 @@ export async function updatePersona({
           openingMessage: input.openingMessage,
         }),
         ...(input.scenario !== undefined && { scenario: input.scenario }),
+        ...(input.exampleDialogue !== undefined && {
+          exampleDialogue: input.exampleDialogue,
+        }),
         ...(input.tags !== undefined && { tags: input.tags }),
         ...(input.userPersona !== undefined && {
           userPersona: input.userPersona,
@@ -1099,6 +1105,22 @@ function textFromParts(parts: unknown): string {
     .trim();
 }
 
+/** Drop a stray meta-analysis preamble ("## 분석 … ## 응답 …") from a preview. */
+function stripMetaText(text: string): string {
+  let out = text;
+  const reply = out.match(/(^|\n)\s*#{0,6}\s*응답\s*[:：]?[ \t]*\n?/);
+  if (reply?.index !== undefined) {
+    out = out.slice(reply.index + reply[0].length);
+  }
+  out = out
+    .split("\n")
+    .filter((line) => !/^\s*#{1,6}\s/.test(line))
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return out || text;
+}
+
 /**
  * Persona chats for the sidebar popover, newest first, each with a preview
  * of its most recent message so threads with the same title are
@@ -1132,7 +1154,8 @@ export async function getPersonaChatsByOwnerId({ userId }: { userId: string }) {
           .orderBy(desc(message.createdAt))
           .limit(1);
 
-        const text = last ? textFromParts(last.parts) : "";
+        const raw = last ? textFromParts(last.parts) : "";
+        const text = last?.role === "assistant" ? stripMetaText(raw) : raw;
         return {
           ...row,
           lastMessage: text.slice(0, 140),
@@ -1301,6 +1324,51 @@ export async function setChatPlayerPersona({
       .update(chat)
       .set({ playerPersonaId })
       .where(and(eq(chat.id, chatId), eq(chat.userId, userId)));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function setChatRollingSummary({
+  chatId,
+  summary,
+}: {
+  chatId: string;
+  summary: string;
+}) {
+  try {
+    await db
+      .update(chat)
+      .set({ rollingSummary: summary })
+      .where(eq(chat.id, chatId));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+// ─── App settings (key/value) ────────────────────────────────────────────
+
+export async function getSetting(key: string): Promise<string | null> {
+  try {
+    const [row] = await db
+      .select({ value: setting.value })
+      .from(setting)
+      .where(eq(setting.key, key));
+    return row?.value ?? null;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function setSetting(key: string, value: string) {
+  try {
+    await db
+      .insert(setting)
+      .values({ key, updatedAt: new Date(), value })
+      .onConflictDoUpdate({
+        set: { updatedAt: new Date(), value },
+        target: setting.key,
+      });
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }

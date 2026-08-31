@@ -21,6 +21,7 @@ export default async function EditPersonaPage({
   const initial: PersonaFormValues = {
     avatarUrl: persona.avatarUrl ?? "",
     defaultModel: persona.defaultModel,
+    exampleDialogue: persona.exampleDialogue ?? "",
     id: persona.id,
     name: persona.name,
     openingMessage: persona.openingMessage ?? "",

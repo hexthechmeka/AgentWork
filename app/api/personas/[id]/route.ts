@@ -5,6 +5,7 @@ import { deletePersona, getPersonaById, updatePersona } from "@/lib/db/queries";
 const patchSchema = z.object({
   avatarUrl: z.string().url().nullish(),
   defaultModel: z.string().min(1).optional(),
+  exampleDialogue: z.string().max(12_000).nullish(),
   name: z.string().min(1).max(120).optional(),
   openingMessage: z.string().max(8000).nullish(),
   panelImageUrl: z.string().url().nullish(),

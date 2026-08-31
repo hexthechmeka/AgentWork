@@ -4,6 +4,7 @@ import {
   createUIMessageStream,
   createUIMessageStreamResponse,
   generateId,
+  generateText,
   isStepCount,
   streamText,
   toUIMessageStream,
@@ -22,6 +23,7 @@ import {
 } from "@/lib/ai/models";
 import {
   buildPersonaPrompt,
+  buildRoleplaySummaryPrompt,
   type RequestHints,
   systemPrompt,
   type UnifiedChatIdentity,
@@ -42,9 +44,11 @@ import {
   getPersonaById,
   getPlayerPersonaById,
   getProjectById,
+  getSetting,
   isProviderHardLocked,
   saveChat,
   saveMessages,
+  setChatRollingSummary,
   updateChatTitleById,
   updateMessage,
 } from "@/lib/db/queries";
@@ -327,14 +331,32 @@ export async function POST(request: Request) {
         playerPersonaText = pp.description;
       }
     }
+    const personaTemplate = personaRow
+      ? await getSetting("persona_prompt_template")
+      : null;
     const personaPrompt = personaRow
       ? buildPersonaPrompt({
+          exampleDialogue: personaRow.exampleDialogue,
           name: personaRow.name,
           personality: personaRow.personality,
+          rollingSummary: chat?.rollingSummary,
           scenario: personaRow.scenario,
+          template: personaTemplate,
           userPersona: playerPersonaText,
         })
       : undefined;
+    const isPersonaChat = Boolean(personaRow);
+    // Roleplay wants long, varied prose. Loosen sampling and lift the output
+    // cap (the local model otherwise stops after a couple of sentences).
+    const personaGenParams = isPersonaChat
+      ? {
+          frequencyPenalty: 0.3,
+          maxOutputTokens: 900,
+          presencePenalty: 0.3,
+          temperature: 0.95,
+          topP: 0.95,
+        }
+      : {};
 
     const currentProvider = chatModel.startsWith("glm/") ? "GLM" : "Claude";
     const identity: UnifiedChatIdentity | undefined =
@@ -416,6 +438,7 @@ export async function POST(request: Request) {
         };
 
         const result = streamText({
+          ...personaGenParams,
           // No tools for models that don't support them (reasoning-only
           // models, and the aichat roleplay model — it leaks tool-call
           // syntax when it sees tool definitions).
@@ -526,6 +549,56 @@ export async function POST(request: Request) {
             // usage metering is best-effort
           }
         })();
+
+        // Rolling summary: every 6th user turn, regenerate the digest so long
+        // roleplays keep continuity. Best-effort, off the response path.
+        if (isPersonaChat && chat?.id) {
+          const userTurns = uiMessages.filter((m) => m.role === "user").length;
+          if (userTurns >= 6 && userTurns % 6 === 0) {
+            (async () => {
+              try {
+                const replyText = await result.text;
+                const speaker = personaRow?.name ?? "상대";
+                const lines = uiMessages
+                  .slice(-12)
+                  .map((m) => {
+                    const t = (m.parts ?? [])
+                      .filter(
+                        (p): p is { type: "text"; text: string } =>
+                          p.type === "text" &&
+                          typeof (p as { text?: unknown }).text === "string"
+                      )
+                      .map((p) => p.text)
+                      .join(" ")
+                      .trim();
+                    return t
+                      ? `${m.role === "user" ? "나" : speaker}: ${t}`
+                      : "";
+                  })
+                  .filter(Boolean);
+                lines.push(`${speaker}: ${replyText.trim()}`);
+
+                const { text: summary } = await generateText({
+                  maxOutputTokens: 400,
+                  model: getLanguageModel(chatModel),
+                  prompt: buildRoleplaySummaryPrompt(
+                    lines.join("\n"),
+                    chat.rollingSummary
+                  ),
+                  temperature: 0.4,
+                });
+                if (summary.trim()) {
+                  await setChatRollingSummary({
+                    chatId: chat.id,
+                    summary: summary.trim(),
+                  });
+                }
+              } catch {
+                // best-effort
+              }
+            })();
+          }
+        }
 
         if (titlePromise) {
           try {

@@ -31,6 +31,7 @@ export type PersonaFormValues = {
   openingMessage: string;
   scenario: string;
   userPersona: string;
+  exampleDialogue: string;
   defaultModel: string;
   tags: string; // comma-separated in the form
 };
@@ -38,6 +39,7 @@ export type PersonaFormValues = {
 export const EMPTY_PERSONA: PersonaFormValues = {
   avatarUrl: "",
   defaultModel: "anthropic/claude-sonnet-5",
+  exampleDialogue: "",
   name: "",
   openingMessage: "",
   panelImageUrl: "",
@@ -149,6 +151,7 @@ export function PersonaForm({ initial }: { initial: PersonaFormValues }) {
         const payload = {
           avatarUrl: values.avatarUrl || null,
           defaultModel: values.defaultModel,
+          exampleDialogue: values.exampleDialogue.trim() || null,
           name: values.name.trim(),
           openingMessage: values.openingMessage.trim() || null,
           panelImageUrl: values.panelImageUrl || null,
@@ -338,6 +341,21 @@ export function PersonaForm({ initial }: { initial: PersonaFormValues }) {
             onChange={handleChange}
             placeholder="예: 이 편의점 야간 알바생. 며칠 전 새로 들어옴."
             value={values.userPersona}
+          />
+        </Field>
+
+        <Field
+          hint="캐릭터 말투·호흡을 잡아주는 짧은 예시. 약한 모델일수록 효과 큼 (선택)"
+          label="예시 대화 (few-shot)"
+        >
+          <textarea
+            className={textareaClass}
+            name="exampleDialogue"
+            onChange={handleChange}
+            placeholder={
+              "나: 요즘 잘 지내?\n한여름: *샌들 끈을 손가락에 감으며 딴청을 부린다* 뭐, 그냥저냥. 너는? ...오랜만에 보니까 좀 어색하네."
+            }
+            value={values.exampleDialogue}
           />
         </Field>
 

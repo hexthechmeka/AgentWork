@@ -152,8 +152,8 @@ function PersonaPanel({ persona }: { persona?: Persona }) {
   const hasGallery = images.length > 1;
 
   return (
-    <aside className="hidden w-[clamp(320px,30vw,440px)] shrink-0 flex-col items-center justify-center gap-3 overflow-y-auto border-border/40 border-r bg-background p-3 lg:flex">
-      <div className="relative aspect-[2/3] w-full max-w-[400px] shrink-0 overflow-hidden rounded-2xl border border-border/40 bg-muted shadow-xl">
+    <aside className="hidden w-[clamp(360px,34vw,520px)] shrink-0 flex-col items-center justify-center gap-3 overflow-y-auto border-border/40 border-r bg-background p-4 lg:flex">
+      <div className="relative aspect-[2/3] w-full max-w-[480px] shrink-0 overflow-hidden rounded-2xl border border-border/40 bg-muted shadow-xl">
         {image ? (
           // biome-ignore lint/performance/noImgElement: user-uploaded blob art
           <img
@@ -332,14 +332,22 @@ function ChatSettingsToolbar({
             ))}
           </div>
         </div>
-        {personaId ? (
+        <div className="flex flex-col gap-1 border-border/40 border-t pt-2">
+          {personaId ? (
+            <Link
+              className="text-[12px] text-muted-foreground hover:text-foreground"
+              href={`/aichat/${personaId}/edit`}
+            >
+              캐릭터 설정 편집
+            </Link>
+          ) : null}
           <Link
             className="text-[12px] text-muted-foreground hover:text-foreground"
-            href={`/aichat/${personaId}/edit`}
+            href="/aichat/settings"
           >
-            캐릭터 설정 편집
+            롤플레이 시스템 프롬프트 편집
           </Link>
-        ) : null}
+        </div>
       </PopoverContent>
     </Popover>
   );

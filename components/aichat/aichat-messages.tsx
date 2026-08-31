@@ -118,13 +118,13 @@ function CharacterMessage({
       : [{ kind: "narration" as const, text: cleaned }];
 
   return (
-    <div className="flex flex-row items-start gap-2">
+    <div className="flex flex-row items-start gap-2.5">
       <PersonaAvatar persona={persona} />
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
         {blocks.map((seg, i) =>
           seg.kind === "dialogue" ? (
             <div
-              className="w-fit max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-orange-500 px-3.5 py-2 text-[calc(13px_*_var(--aichat-msg-scale,1))] text-white leading-[1.7] dark:bg-orange-500/90"
+              className="w-fit max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-orange-500 px-3.5 py-2 text-[calc(13px_*_var(--aichat-msg-scale,1))] text-white leading-[1.7] dark:bg-orange-500/90"
               // biome-ignore lint/suspicious/noArrayIndexKey: roleplay segments have no stable id
               key={`${i}-d`}
             >
@@ -132,7 +132,7 @@ function CharacterMessage({
             </div>
           ) : (
             <p
-              className="whitespace-pre-wrap px-1 text-[calc(12px_*_var(--aichat-msg-scale,1))] text-muted-foreground italic leading-relaxed"
+              className="whitespace-pre-wrap px-1 text-[calc(13px_*_var(--aichat-msg-scale,1))] text-foreground/70 leading-[1.9]"
               // biome-ignore lint/suspicious/noArrayIndexKey: roleplay segments have no stable id
               key={`${i}-n`}
             >

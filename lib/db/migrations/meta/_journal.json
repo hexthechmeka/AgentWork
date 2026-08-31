@@ -57,6 +57,13 @@
       "when": 1788193729621,
       "tag": "0007_blue_the_renegades",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788198000205,
+      "tag": "0008_soft_onslaught",
+      "breakpoints": true
     }
   ]
 }

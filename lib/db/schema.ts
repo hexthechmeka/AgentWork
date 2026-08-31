@@ -45,6 +45,9 @@ export const persona = pgTable("Persona", {
   avatarUrl: text("avatarUrl"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   defaultModel: text("defaultModel").notNull(),
+  // Few-shot: 1-2 sample exchanges in the character's voice. Injected into
+  // the roleplay prompt so weak models pick up tone and depth.
+  exampleDialogue: text("exampleDialogue"),
   id: uuid("id").primaryKey().notNull().defaultRandom(),
   name: text("name").notNull(),
   openingMessage: text("openingMessage"),
@@ -95,6 +98,10 @@ export const chat = pgTable("Chat", {
     onDelete: "set null",
   }),
   projectId: uuid("projectId").references(() => project.id),
+  // AIchat: a periodically-regenerated digest of the roleplay so far
+  // (relationship, mood, open threads) injected back into context for
+  // continuity across a long chat.
+  rollingSummary: text("rollingSummary"),
   title: text("title").notNull(),
   userId: uuid("userId")
     .notNull()
@@ -238,3 +245,13 @@ export const providerLimit = pgTable("ProviderLimit", {
 });
 
 export type ProviderLimit = InferSelectModel<typeof providerLimit>;
+
+// Small key/value store for single-user app config (e.g. the editable
+// roleplay system-prompt template).
+export const setting = pgTable("Setting", {
+  key: varchar("key", { length: 64 }).primaryKey().notNull(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  value: text("value").notNull(),
+});
+
+export type Setting = InferSelectModel<typeof setting>;
