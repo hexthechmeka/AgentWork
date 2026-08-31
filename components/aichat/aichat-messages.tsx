@@ -43,33 +43,44 @@ type Segment = { kind: "dialogue" | "narration"; text: string };
 // off a spoken line so the bubble holds just the words.
 const EDGE_QUOTES = /^[\s"“”„‟'‘’「」『』]+|[\s"“”„‟'‘’「」『』]+$/g;
 
-// Opener char -> its closer. Narration is delimited by *asterisks* or
-// ( parentheses ); dialogue by "quotes" (used only in quote mode).
+// Narration span openers -> their closers ( *asterisks* / ( parens ) ).
 const NARRATION_OPENER: Record<string, string> = {
   "(": ")",
   "*": "*",
   "（": "）",
 };
-const DIALOGUE_OPENER: Record<string, string> = { '"': '"', "“": "”" };
-// A paired quote wrapping >=2 chars means the model is marking spoken lines
-// with quotes, so flip the default: only quoted text goes in a bubble, the
-// rest is narration.
-const HAS_SPOKEN_QUOTES = /["“][^"”\n]{2,}["”]/;
+// Any of these toggles a quoted (spoken) span. Mixed straight/smart/bracket
+// styles all pair up, since we just toggle on "a quote-ish char".
+const QUOTE_CHARS = new Set([
+  '"',
+  "“",
+  "”",
+  "„",
+  "‟",
+  "«",
+  "»",
+  "「",
+  "」",
+  "『",
+  "』",
+]);
 
 /**
- * Split a roleplay reply into narration (inside `* *` / `( )`, or — in quote
- * mode — anything outside `" "` → italic prose outside the bubble) and spoken
- * dialogue (the chat bubble). Wrapping quotes on dialogue are stripped.
+ * Split a roleplay reply into narration (italic, outside the bubble) and
+ * spoken dialogue (the bubble). A quote always wins: text in "quotes" is
+ * dialogue even inside a `* *` / `( )` span. If the reply uses quotes at all,
+ * unquoted text defaults to narration; otherwise `* *` / `( )` mark narration
+ * and everything else is dialogue.
  */
 function parseRoleplay(text: string): Segment[] {
-  const quoteMode = HAS_SPOKEN_QUOTES.test(text);
+  const quoteMode = [...text].filter((c) => QUOTE_CHARS.has(c)).length >= 2;
   const outsideKind: "dialogue" | "narration" = quoteMode
     ? "narration"
     : "dialogue";
 
   const segs: Segment[] = [];
   let buf = "";
-  let spanKind: "" | "dialogue" | "narration" = "";
+  let spanKind: "" | "dialogue" | "narration" = ""; // "" = outside a span
   let closer = "";
 
   const push = (kind: "dialogue" | "narration") => {
@@ -84,27 +95,44 @@ function parseRoleplay(text: string): Segment[] {
   };
 
   for (const ch of text) {
-    if (spanKind) {
+    if (spanKind === "dialogue") {
+      if (QUOTE_CHARS.has(ch)) {
+        push("dialogue");
+        spanKind = "";
+      } else {
+        buf += ch;
+      }
+      continue;
+    }
+    if (QUOTE_CHARS.has(ch)) {
+      push(spanKind === "narration" ? "narration" : outsideKind);
+      spanKind = "dialogue";
+      closer = "";
+      continue;
+    }
+    if (spanKind === "narration") {
       if (ch === closer) {
-        push(spanKind);
+        push("narration");
         spanKind = "";
         closer = "";
       } else {
         buf += ch;
       }
-    } else if (NARRATION_OPENER[ch]) {
+      continue;
+    }
+    if (NARRATION_OPENER[ch]) {
       push(outsideKind);
       spanKind = "narration";
       closer = NARRATION_OPENER[ch];
-    } else if (quoteMode && DIALOGUE_OPENER[ch]) {
-      push(outsideKind);
-      spanKind = "dialogue";
-      closer = DIALOGUE_OPENER[ch];
     } else {
       buf += ch;
     }
   }
-  push(spanKind || outsideKind);
+  if (spanKind === "dialogue") {
+    push("dialogue");
+  } else {
+    push(spanKind === "narration" ? "narration" : outsideKind);
+  }
 
   const merged: Segment[] = [];
   for (const s of segs) {
