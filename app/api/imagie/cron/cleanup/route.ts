@@ -1,9 +1,10 @@
 import { connection } from "next/server";
 import { purgeExpired } from "@/lib/imagie/cleanup";
 
-// Vercel Cron (see vercel.json). Deletes "임시" images past their 7-day TTL
-// and their blobs. Images moved to any other folder have expiresAt = NULL
-// and are never touched.
+// Vercel Cron (see vercel.json) — daily (Hobby plan allows daily only).
+// Deletes "임시" images past their 7-day TTL and their blobs. Images moved to
+// any other folder have expiresAt = NULL and are never touched. The 200-item
+// cap is enforced synchronously on every save, so this is just the TTL sweep.
 export async function GET(request: Request) {
   // Keep this off the build-time prerender path (nextConfig.cacheComponents).
   await connection();
