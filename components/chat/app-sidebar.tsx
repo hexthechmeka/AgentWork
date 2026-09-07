@@ -13,6 +13,7 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { SidebarAichat } from "@/components/chat/sidebar-aichat";
+import { SidebarImagie } from "@/components/chat/sidebar-imagie";
 import {
   getProjectsKey,
   SidebarProjects,
@@ -215,6 +216,7 @@ export function AppSidebar({ user }: { user: User | undefined }) {
           </SidebarGroup>
           <SidebarProjects user={user} />
           <SidebarAichat user={user} />
+          <SidebarImagie user={user} />
         </SidebarContent>
         <SidebarFooter className="border-t border-sidebar-border pt-2 pb-3">
           {user ? <UsageWidget /> : null}

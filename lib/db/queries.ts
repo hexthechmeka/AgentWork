@@ -26,6 +26,12 @@ import {
   chat,
   type DBMessage,
   document,
+  type FavoritePrompt,
+  type Folder,
+  favoritePrompt,
+  folder,
+  type ImagieImage,
+  imagieImage,
   message,
   type Persona,
   type PlayerPersona,
@@ -33,6 +39,8 @@ import {
   playerPersona,
   project,
   providerLimit,
+  type RunpodSetting,
+  runpodSetting,
   type Suggestion,
   setting,
   stream,
@@ -1369,6 +1377,372 @@ export async function setSetting(key: string, value: string) {
         set: { updatedAt: new Date(), value },
         target: setting.key,
       });
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+// ─── Imagie (image generation) ───────────────────────────────────────────
+
+export const IMAGIE_UNFILED = "미분류";
+export const IMAGIE_TEMP = "임시";
+/** Auto-saved images live in "임시" for this long, then the cron purges them. */
+export const IMAGIE_TEMP_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** Hard cap on "임시" — the oldest over this are trimmed on every save. */
+export const IMAGIE_TEMP_MAX = 200;
+
+/**
+ * Make sure the two system folders exist (idempotent) and return their ids.
+ * Matched by name+isSystem so an older seed with different UUIDs still works.
+ */
+export async function ensureSystemFolders(): Promise<{
+  unfiledId: string;
+  tempId: string;
+}> {
+  try {
+    const rows = await db
+      .select()
+      .from(folder)
+      .where(eq(folder.isSystem, true));
+    const find = (name: string) => rows.find((r) => r.name === name)?.id;
+
+    let unfiledId = find(IMAGIE_UNFILED);
+    let tempId = find(IMAGIE_TEMP);
+
+    if (!unfiledId) {
+      const [row] = await db
+        .insert(folder)
+        .values({ isSystem: true, name: IMAGIE_UNFILED })
+        .returning({ id: folder.id });
+      unfiledId = row.id;
+    }
+    if (!tempId) {
+      const [row] = await db
+        .insert(folder)
+        .values({ isSystem: true, name: IMAGIE_TEMP })
+        .returning({ id: folder.id });
+      tempId = row.id;
+    }
+    return { tempId, unfiledId };
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export type FolderWithMeta = Folder & {
+  imageCount: number;
+  coverThumbUrl: string | null;
+};
+
+export async function listFolders(): Promise<FolderWithMeta[]> {
+  try {
+    const folders = await db
+      .select()
+      .from(folder)
+      .orderBy(desc(folder.isSystem), asc(folder.createdAt));
+
+    const counts = await db
+      .select({ folderId: imagieImage.folderId, n: count() })
+      .from(imagieImage)
+      .groupBy(imagieImage.folderId);
+    const countMap = new Map(counts.map((c) => [c.folderId, Number(c.n)]));
+
+    const covers = await Promise.all(
+      folders.map(async (f) => {
+        const [row] = await db
+          .select({ thumbUrl: imagieImage.thumbUrl })
+          .from(imagieImage)
+          .where(eq(imagieImage.folderId, f.id))
+          .orderBy(desc(imagieImage.createdAt))
+          .limit(1);
+        return row?.thumbUrl ?? null;
+      })
+    );
+
+    return folders.map((f, i) => ({
+      ...f,
+      coverThumbUrl: covers[i],
+      imageCount: countMap.get(f.id) ?? 0,
+    }));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function getFolderById(id: string): Promise<Folder | null> {
+  try {
+    const [row] = await db.select().from(folder).where(eq(folder.id, id));
+    return row ?? null;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function createFolder(name: string): Promise<Folder> {
+  try {
+    const [row] = await db
+      .insert(folder)
+      .values({ isSystem: false, name })
+      .returning();
+    return row;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function renameFolder(id: string, name: string) {
+  try {
+    await db
+      .update(folder)
+      .set({ name })
+      .where(and(eq(folder.id, id), eq(folder.isSystem, false)));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/** Delete a custom folder; its images move to "미분류" (never hard-deleted). */
+export async function deleteFolder(id: string) {
+  try {
+    const { unfiledId } = await ensureSystemFolders();
+    await db
+      .update(imagieImage)
+      .set({ folderId: unfiledId })
+      .where(eq(imagieImage.folderId, id));
+    await db
+      .delete(folder)
+      .where(and(eq(folder.id, id), eq(folder.isSystem, false)));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function listImages({
+  folderId,
+  limit = 200,
+  offset = 0,
+}: {
+  folderId: string;
+  limit?: number;
+  offset?: number;
+}): Promise<ImagieImage[]> {
+  try {
+    return await db
+      .select()
+      .from(imagieImage)
+      .where(eq(imagieImage.folderId, folderId))
+      .orderBy(desc(imagieImage.createdAt))
+      .limit(limit)
+      .offset(offset);
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function getImageById(id: string): Promise<ImagieImage | null> {
+  try {
+    const [row] = await db
+      .select()
+      .from(imagieImage)
+      .where(eq(imagieImage.id, id));
+    return row ?? null;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export type NewImagieImage = {
+  id: string;
+  folderId: string;
+  blobUrl: string;
+  thumbUrl: string;
+  prompt: string;
+  negativePrompt: string;
+  modelName: string;
+  width: number;
+  height: number;
+  steps: number;
+  guidanceScale: string;
+  sampler: string;
+  seed: number | null;
+  metadata: unknown;
+  expiresAt: Date | null;
+};
+
+export async function insertImages(rows: NewImagieImage[]): Promise<void> {
+  if (rows.length === 0) {
+    return;
+  }
+  try {
+    await db.insert(imagieImage).values(rows);
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/** Move an image to a folder. Any folder but "임시" makes it permanent. */
+export async function moveImageToFolder(id: string, folderId: string) {
+  try {
+    const { tempId } = await ensureSystemFolders();
+    const expiresAt =
+      folderId === tempId ? new Date(Date.now() + IMAGIE_TEMP_TTL_MS) : null;
+    await db
+      .update(imagieImage)
+      .set({ expiresAt, folderId })
+      .where(eq(imagieImage.id, id));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function deleteImageRows(ids: string[]): Promise<void> {
+  if (ids.length === 0) {
+    return;
+  }
+  try {
+    await db.delete(imagieImage).where(inArray(imagieImage.id, ids));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/** Oldest "임시" images beyond IMAGIE_TEMP_MAX (blob URLs + ids to clean up). */
+export async function tempOverflowImages(): Promise<
+  Array<{ id: string; blobUrl: string; thumbUrl: string }>
+> {
+  try {
+    const { tempId } = await ensureSystemFolders();
+    const [{ n }] = await db
+      .select({ n: count() })
+      .from(imagieImage)
+      .where(eq(imagieImage.folderId, tempId));
+    const overflow = Number(n) - IMAGIE_TEMP_MAX;
+    if (overflow <= 0) {
+      return [];
+    }
+    return await db
+      .select({
+        blobUrl: imagieImage.blobUrl,
+        id: imagieImage.id,
+        thumbUrl: imagieImage.thumbUrl,
+      })
+      .from(imagieImage)
+      .where(eq(imagieImage.folderId, tempId))
+      .orderBy(asc(imagieImage.createdAt))
+      .limit(overflow);
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/** "임시" images whose expiresAt has passed (blob URLs + ids to clean up). */
+export async function expiredTempImages(): Promise<
+  Array<{ id: string; blobUrl: string; thumbUrl: string }>
+> {
+  try {
+    const { tempId } = await ensureSystemFolders();
+    return await db
+      .select({
+        blobUrl: imagieImage.blobUrl,
+        id: imagieImage.id,
+        thumbUrl: imagieImage.thumbUrl,
+      })
+      .from(imagieImage)
+      .where(
+        and(
+          eq(imagieImage.folderId, tempId),
+          lt(imagieImage.expiresAt, new Date())
+        )
+      );
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+// ─── Favorite prompts ────────────────────────────────────────────────────
+
+export async function listFavoritePrompts(): Promise<FavoritePrompt[]> {
+  try {
+    return await db
+      .select()
+      .from(favoritePrompt)
+      .orderBy(desc(favoritePrompt.createdAt));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function createFavoritePrompt(input: {
+  label: string | null;
+  prompt: string;
+  negativePrompt: string;
+}): Promise<FavoritePrompt> {
+  try {
+    const [row] = await db.insert(favoritePrompt).values(input).returning();
+    return row;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function updateFavoritePrompt(
+  id: string,
+  input: Partial<{
+    label: string | null;
+    prompt: string;
+    negativePrompt: string;
+  }>
+) {
+  try {
+    await db.update(favoritePrompt).set(input).where(eq(favoritePrompt.id, id));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function deleteFavoritePrompt(id: string) {
+  try {
+    await db.delete(favoritePrompt).where(eq(favoritePrompt.id, id));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+// ─── RunPod settings (single row, id = 1) ────────────────────────────────
+
+/** Server-only: includes the raw apiKey. Never return this to the browser. */
+export async function getRunpodSetting(): Promise<RunpodSetting | null> {
+  try {
+    const [row] = await db
+      .select()
+      .from(runpodSetting)
+      .where(eq(runpodSetting.id, 1));
+    return row ?? null;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function upsertRunpodSetting(input: {
+  podId?: string | null;
+  apiKey?: string | null;
+}) {
+  try {
+    const set: Record<string, unknown> = { updatedAt: new Date() };
+    if (input.podId !== undefined) {
+      set.podId = input.podId;
+    }
+    if (input.apiKey !== undefined) {
+      set.apiKey = input.apiKey;
+    }
+    await db
+      .insert(runpodSetting)
+      .values({
+        apiKey: input.apiKey ?? null,
+        id: 1,
+        podId: input.podId ?? null,
+      })
+      .onConflictDoUpdate({ set, target: runpodSetting.id });
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }

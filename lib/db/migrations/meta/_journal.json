@@ -64,6 +64,13 @@
       "when": 1788198000205,
       "tag": "0008_soft_onslaught",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788797785221,
+      "tag": "0009_slippery_lady_bullseye",
+      "breakpoints": true
     }
   ]
 }

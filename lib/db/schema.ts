@@ -1,5 +1,6 @@
 import type { InferSelectModel } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   foreignKey,
   integer,
@@ -255,3 +256,68 @@ export const setting = pgTable("Setting", {
 });
 
 export type Setting = InferSelectModel<typeof setting>;
+
+// ─── Imagie (image generation) ────────────────────────────────────────────
+// Single-user feature — these tables have no owner column, only auth gates
+// the routes. The Imagie backend (RunPod FastAPI) is never touched; we only
+// store the generated images (blob) + their metadata here.
+
+// A gallery folder. `isSystem` folders ("미분류" = unfiled, "임시" = temp)
+// can't be renamed or deleted.
+export const folder = pgTable("Folder", {
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  id: uuid("id").primaryKey().notNull().defaultRandom(),
+  isSystem: boolean("isSystem").notNull().default(false),
+  name: text("name").notNull(),
+});
+
+export type Folder = InferSelectModel<typeof folder>;
+
+// One generated image. Auto-saved to the "임시" folder on generate with
+// `expiresAt = now() + 7d`; moving it to any other folder clears `expiresAt`
+// (NULL = kept forever). `metadata` holds the rest of the backend's
+// GenerateResponse.metadata (loras, embeddings, hr_*, ref_*, …).
+export const imagieImage = pgTable("ImagieImage", {
+  blobUrl: text("blobUrl").notNull(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  expiresAt: timestamp("expiresAt"),
+  folderId: uuid("folderId")
+    .notNull()
+    .references(() => folder.id, { onDelete: "cascade" }),
+  guidanceScale: numeric("guidanceScale").notNull(),
+  height: integer("height").notNull(),
+  id: uuid("id").primaryKey().notNull().defaultRandom(),
+  metadata: json("metadata").notNull().default({}),
+  modelName: text("modelName").notNull(),
+  negativePrompt: text("negativePrompt").notNull().default(""),
+  prompt: text("prompt").notNull(),
+  sampler: text("sampler").notNull(),
+  seed: bigint("seed", { mode: "number" }),
+  steps: integer("steps").notNull(),
+  thumbUrl: text("thumbUrl").notNull(),
+  width: integer("width").notNull(),
+});
+
+export type ImagieImage = InferSelectModel<typeof imagieImage>;
+
+// A saved prompt + negative-prompt pair, optionally labelled.
+export const favoritePrompt = pgTable("FavoritePrompt", {
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  id: uuid("id").primaryKey().notNull().defaultRandom(),
+  label: text("label"),
+  negativePrompt: text("negativePrompt").notNull().default(""),
+  prompt: text("prompt").notNull(),
+});
+
+export type FavoritePrompt = InferSelectModel<typeof favoritePrompt>;
+
+// Single-row table (id is forced to 1) holding RunPod pod control config.
+// `apiKey` is stored server-side only and never returned to the browser.
+export const runpodSetting = pgTable("RunpodSetting", {
+  apiKey: text("apiKey"),
+  id: integer("id").primaryKey().notNull().default(1),
+  podId: text("podId"),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+});
+
+export type RunpodSetting = InferSelectModel<typeof runpodSetting>;

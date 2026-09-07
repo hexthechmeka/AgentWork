@@ -52,5 +52,19 @@
         "useTopLevelRegex": "off"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      // Imagie is a large, UI-heavy feature area; inline JSX handlers are
+      // idiomatic here and the micro-perf rule is more noise than signal.
+      "includes": ["app/imagie/**", "components/imagie/**"],
+      "linter": {
+        "rules": {
+          "performance": {
+            "noJsxPropsBind": "off"
+          }
+        }
+      }
+    }
+  ]
 }
