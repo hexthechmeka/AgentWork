@@ -7,6 +7,7 @@ import { DEFAULT_SIZE_PRESETS, type SizePreset } from "./size-presets";
 const KEYS = {
   defaultModel: "imagie.defaultModel",
   expertMode: "imagie.expertMode",
+  imagician: "imagie.imagician",
   negative: "imagie.defaultNegative",
   sizePresets: "imagie.sizePresets",
 } as const;
@@ -33,6 +34,14 @@ export function getExpertMode(): boolean {
 
 export function setExpertMode(on: boolean): void {
   write(KEYS.expertMode, on ? "1" : "0");
+}
+
+export function getImagician(): boolean {
+  return read(KEYS.imagician) === "1";
+}
+
+export function setImagician(on: boolean): void {
+  write(KEYS.imagician, on ? "1" : "0");
 }
 
 export function getDefaultModel(): string {

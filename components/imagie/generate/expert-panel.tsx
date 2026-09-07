@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { PlusIcon, UploadIcon, XIcon } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { FeatureBadge } from "@/components/imagie/feature-badge";
@@ -13,6 +14,12 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
+import {
+  type AdvancedSettings,
+  fileToDataUrl,
+  type LoraEntry,
+} from "@/lib/imagie/advanced";
+import { getEmbeddings, getLoras } from "@/lib/imagie/imagie-client";
 import { SAMPLERS } from "@/lib/imagie/size-presets";
 import { fetcher } from "@/lib/utils";
 
@@ -34,13 +41,19 @@ export function ExpertPanel({
   onOpenChange,
   value,
   onChange,
-  /** null when the model is v-pred (backend owns sampling). */
+  advanced,
+  onAdvancedChange,
+  baseUrl,
+  /** true when the model is v-pred (backend owns sampling). */
   samplingLocked,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   value: ExpertSettings;
   onChange: (next: ExpertSettings) => void;
+  advanced: AdvancedSettings;
+  onAdvancedChange: (next: AdvancedSettings) => void;
+  baseUrl: string | null;
   samplingLocked: boolean;
 }) {
   const [tab, setTab] = useState<"gen" | "server">("gen");
@@ -51,7 +64,7 @@ export function ExpertPanel({
 
   return (
     <Sheet onOpenChange={onOpenChange} open={open}>
-      <SheetContent className="w-[380px] overflow-y-auto sm:max-w-[380px]">
+      <SheetContent className="w-[400px] overflow-y-auto sm:max-w-[400px]">
         <SheetHeader>
           <SheetTitle>전문가 설정</SheetTitle>
         </SheetHeader>
@@ -158,12 +171,11 @@ export function ExpertPanel({
               />
             </div>
 
-            <div className="rounded-lg border border-border/60 border-dashed p-3 text-[12px] text-muted-foreground">
-              LoRA · 임베딩 · IP-Adapter · Hires Fix · img2img
-              <br />
-              {/* TODO(imagie): Pass 2 — wire these to GenerateParams. */}
-              다음 업데이트에서 추가됩니다.
-            </div>
+            <AdvancedControls
+              baseUrl={baseUrl}
+              onChange={onAdvancedChange}
+              value={advanced}
+            />
           </div>
         ) : (
           <ServerTab />
@@ -187,6 +199,245 @@ function Field({
       </span>
       {children}
     </div>
+  );
+}
+
+function SectionHead({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mt-1 border-border/60 border-t pt-3 font-medium text-[12px] text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
+// ─── Advanced controls: LoRA / embeddings / IP-Adapter / Hires Fix ────────
+// img2img lives on the main form (spec §5); it edits the same AdvancedSettings.
+
+function AdvancedControls({
+  value,
+  onChange,
+  baseUrl,
+}: {
+  value: AdvancedSettings;
+  onChange: (next: AdvancedSettings) => void;
+  baseUrl: string | null;
+}) {
+  const [loraNames, setLoraNames] = useState<string[]>([]);
+  const [embedNames, setEmbedNames] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!baseUrl) {
+      return;
+    }
+    getLoras(baseUrl)
+      .then((r) => setLoraNames(r.loras))
+      .catch(() => undefined);
+    getEmbeddings(baseUrl)
+      .then((r) => setEmbedNames(r.embeddings))
+      .catch(() => undefined);
+  }, [baseUrl]);
+
+  const patch = useCallback(
+    (p: Partial<AdvancedSettings>) => onChange({ ...value, ...p }),
+    [value, onChange]
+  );
+
+  const setLora = useCallback(
+    (i: number, entry: Partial<LoraEntry>) => {
+      patch({
+        loras: value.loras.map((l, idx) =>
+          idx === i ? { ...l, ...entry } : l
+        ),
+      });
+    },
+    [value.loras, patch]
+  );
+
+  const uploadRef = useCallback(
+    async (file: File | undefined) => {
+      if (!file) {
+        return;
+      }
+      try {
+        patch({ refImage: await fileToDataUrl(file) });
+      } catch {
+        toast.error("이미지 읽기 실패");
+      }
+    },
+    [patch]
+  );
+
+  return (
+    <>
+      <SectionHead>LoRA</SectionHead>
+      {value.loras.map((l, i) => (
+        <div
+          className="flex items-center gap-2"
+          // biome-ignore lint/suspicious/noArrayIndexKey: lora rows have no stable id
+          key={i}
+        >
+          <select
+            className={selectClass}
+            onChange={(e) => setLora(i, { name: e.target.value })}
+            value={l.name}
+          >
+            <option value="">(선택)</option>
+            {loraNames.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+          <Input
+            className="w-20"
+            max={2}
+            min={0}
+            onChange={(e) => setLora(i, { scale: Number(e.target.value) || 0 })}
+            step="0.05"
+            type="number"
+            value={l.scale}
+          />
+          <Button
+            className="size-8 shrink-0"
+            onClick={() =>
+              patch({ loras: value.loras.filter((_, idx) => idx !== i) })
+            }
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <XIcon className="size-4" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        className="w-fit"
+        disabled={loraNames.length === 0}
+        onClick={() =>
+          patch({ loras: [...value.loras, { name: "", scale: 0.8 }] })
+        }
+        size="sm"
+        type="button"
+        variant="outline"
+      >
+        <PlusIcon className="size-3.5" />
+        LoRA 추가
+      </Button>
+      {loraNames.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground">
+          Pod을 켜면 사용 가능한 LoRA 목록이 로드됩니다.
+        </p>
+      ) : null}
+
+      <SectionHead>임베딩 (textual inversion · SD1.x)</SectionHead>
+      {embedNames.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground">
+          사용 가능한 임베딩이 없습니다.
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {embedNames.map((n) => {
+            const on = value.embeddings.includes(n);
+            return (
+              <button
+                className={
+                  on
+                    ? "rounded-md bg-foreground px-2 py-1 text-[11px] text-background"
+                    : "rounded-md border border-border px-2 py-1 text-[11px]"
+                }
+                key={n}
+                onClick={() =>
+                  patch({
+                    embeddings: on
+                      ? value.embeddings.filter((x) => x !== n)
+                      : [...value.embeddings, n],
+                  })
+                }
+                type="button"
+              >
+                {n}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <SectionHead>IP-Adapter (참조 이미지)</SectionHead>
+      {value.refImage ? (
+        <div className="flex items-center gap-2">
+          {/* biome-ignore lint/performance/noImgElement: local data URL preview */}
+          <img
+            alt=""
+            className="size-14 rounded-md object-cover"
+            src={value.refImage}
+          />
+          <Button
+            onClick={() => patch({ refImage: null })}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            제거
+          </Button>
+        </div>
+      ) : (
+        <label className="flex w-fit cursor-pointer items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-[12px]">
+          <UploadIcon className="size-3.5" />
+          참조 이미지 업로드
+          <input
+            accept="image/png,image/jpeg"
+            className="hidden"
+            onChange={(e) => uploadRef(e.target.files?.[0])}
+            type="file"
+          />
+        </label>
+      )}
+      {value.refImage ? (
+        <Field label={`강도 ${value.refScale.toFixed(2)}`}>
+          <input
+            max={1.2}
+            min={0.2}
+            onChange={(e) => patch({ refScale: Number(e.target.value) })}
+            step={0.05}
+            type="range"
+            value={value.refScale}
+          />
+        </Field>
+      ) : null}
+
+      <SectionHead>Hires Fix</SectionHead>
+      <div className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
+        <span className="text-[13px]">활성화</span>
+        <Switch
+          checked={value.hrEnabled}
+          onCheckedChange={(v) => patch({ hrEnabled: v })}
+        />
+      </div>
+      {value.hrEnabled ? (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={`업스케일 ${value.hrScale.toFixed(2)}×`}>
+            <input
+              max={2}
+              min={1}
+              onChange={(e) => patch({ hrScale: Number(e.target.value) })}
+              step={0.1}
+              type="range"
+              value={value.hrScale}
+            />
+          </Field>
+          <Field label={`denoising ${value.hrDenoising.toFixed(2)}`}>
+            <input
+              max={0.9}
+              min={0.1}
+              onChange={(e) => patch({ hrDenoising: Number(e.target.value) })}
+              step={0.05}
+              type="range"
+              value={value.hrDenoising}
+            />
+          </Field>
+        </div>
+      ) : null}
+    </>
   );
 }
 

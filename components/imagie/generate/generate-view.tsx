@@ -15,12 +15,24 @@ import {
   type ExpertSettings,
 } from "@/components/imagie/generate/expert-panel";
 import { FavoritePromptModal } from "@/components/imagie/generate/favorite-prompt-modal";
+import { ImagicianChat } from "@/components/imagie/generate/imagician-chat";
 import { PromptFieldsEditor } from "@/components/imagie/generate/prompt-fields";
 import { RunpodBadge } from "@/components/imagie/generate/runpod-badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  type AdvancedSettings,
+  advancedMetadata,
+  applyAdvancedToParams,
+  EMPTY_ADVANCED,
+  fileToDataUrl,
+} from "@/lib/imagie/advanced";
+import {
+  IMAGICIAN_MODEL_MAP,
+  type ImagicianResult,
+} from "@/lib/imagie/imagician";
 import {
   type GenerateParams,
   generateImage,
@@ -32,9 +44,11 @@ import {
 import {
   getDefaultModel,
   getExpertMode,
+  getImagician,
   getSizePresets,
   setDefaultModel,
   setExpertMode,
+  setImagician,
 } from "@/lib/imagie/local-settings";
 import { resolveRecommended } from "@/lib/imagie/model-catalog";
 import {
@@ -123,6 +137,9 @@ export function GenerateView() {
     width: 1024,
   });
 
+  const [advanced, setAdvanced] = useState<AdvancedSettings>(EMPTY_ADVANCED);
+  const [imagician, setImagicianOn] = useState(false);
+
   const [favOpen, setFavOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [statusLine, setStatusLine] = useState<string | null>(null);
@@ -136,6 +153,7 @@ export function GenerateView() {
 
   useEffect(() => {
     setExpert(getExpertMode());
+    setImagicianOn(getImagician());
   }, []);
 
   // "이 설정으로 다시 생성" from the gallery drops values here via sessionStorage.
@@ -210,6 +228,33 @@ export function GenerateView() {
     setExpertMode(on);
   }, []);
 
+  const toggleImagician = useCallback((on: boolean) => {
+    setImagicianOn(on);
+    setImagician(on);
+  }, []);
+
+  const applyImagician = useCallback(
+    (p: NonNullable<ImagicianResult["proposal"]>) => {
+      setFields({
+        artist: p.fields.artist,
+        background: p.fields.background,
+        characters:
+          p.fields.characters.length > 0
+            ? p.fields.characters
+            : EMPTY_PROMPT_FIELDS.characters,
+        composition: p.fields.composition,
+        pose: p.fields.pose,
+      });
+      if (p.negativePrompt) {
+        setNegative(p.negativePrompt);
+      }
+      setModelName(IMAGICIAN_MODEL_MAP[p.style]);
+      setBatchCount(p.batch);
+      toggleImagician(false);
+    },
+    [setModelName, toggleImagician]
+  );
+
   const modelInfo = useMemo(
     () => modelDetail.find((m) => m.name === modelName),
     [modelDetail, modelName]
@@ -263,6 +308,7 @@ export function GenerateView() {
     if (expert && expertSettings.safetyCheck) {
       params.safety_check = true;
     }
+    const finalParams = applyAdvancedToParams(params, advanced);
 
     setGenerating(true);
     setPreviewSrc(null);
@@ -304,7 +350,7 @@ export function GenerateView() {
         }
       }, 1200);
 
-      const res = await generateImage(baseUrl, params);
+      const res = await generateImage(baseUrl, finalParams);
       if (poll) {
         clearInterval(poll);
         poll = null;
@@ -337,18 +383,19 @@ export function GenerateView() {
         {
           body: JSON.stringify({
             images: made.map((m) => ({
+              metadata: advancedMetadata(advanced),
               png: m.src,
               seed: m.seed,
               thumb: m.thumb,
             })),
             params: {
-              guidanceScale: params.guidance_scale ?? 0,
+              guidanceScale: finalParams.guidance_scale ?? 0,
               height,
               modelName,
               negativePrompt: negative,
-              prompt: params.prompt,
-              sampler: params.sampler ?? "",
-              steps: params.steps ?? 0,
+              prompt: finalParams.prompt,
+              sampler: finalParams.sampler ?? "",
+              steps: finalParams.steps ?? 0,
               width,
             },
           }),
@@ -395,6 +442,7 @@ export function GenerateView() {
     seedMode,
     seedText,
     recommended,
+    advanced,
     mutateFolders,
   ]);
 
@@ -437,6 +485,10 @@ export function GenerateView() {
         </div>
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+            i-magician
+            <Switch checked={imagician} onCheckedChange={toggleImagician} />
+          </span>
+          <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
             전문가 모드
             <Switch checked={expert} onCheckedChange={toggleExpert} />
           </span>
@@ -468,6 +520,7 @@ export function GenerateView() {
                 즐겨찾기
               </Button>
             </div>
+            {imagician ? <ImagicianChat onApply={applyImagician} /> : null}
             <PromptFieldsEditor onChange={setFields} value={fields} />
 
             <div className="flex flex-col gap-1.5">
@@ -571,10 +624,79 @@ export function GenerateView() {
               )}
             </div>
 
-            <label className="flex items-center gap-2 rounded-lg border border-border/60 border-dashed px-3 py-2 text-[12px] text-muted-foreground">
-              <input disabled type="checkbox" />
-              img2img (다음 업데이트){/* TODO(imagie): Pass 2 */}
-            </label>
+            <div className="flex flex-col gap-2 rounded-lg border border-border/60 px-3 py-2">
+              <span className="flex items-center justify-between text-[12px] text-muted-foreground">
+                img2img
+                <Switch
+                  checked={advanced.img2imgEnabled}
+                  onCheckedChange={(v) =>
+                    setAdvanced((a) => ({ ...a, img2imgEnabled: v }))
+                  }
+                />
+              </span>
+              {advanced.img2imgEnabled ? (
+                <>
+                  {advanced.initImage ? (
+                    <div className="flex items-center gap-2">
+                      {/* biome-ignore lint/performance/noImgElement: local data URL preview */}
+                      <img
+                        alt=""
+                        className="size-14 rounded-md object-cover"
+                        src={advanced.initImage}
+                      />
+                      <Button
+                        onClick={() =>
+                          setAdvanced((a) => ({ ...a, initImage: null }))
+                        }
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        제거
+                      </Button>
+                    </div>
+                  ) : (
+                    <label className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-[12px]">
+                      초안 이미지 업로드
+                      <input
+                        accept="image/png,image/jpeg"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) {
+                            return;
+                          }
+                          try {
+                            const url = await fileToDataUrl(file);
+                            setAdvanced((a) => ({ ...a, initImage: url }));
+                          } catch {
+                            toast.error("이미지 읽기 실패");
+                          }
+                        }}
+                        type="file"
+                      />
+                    </label>
+                  )}
+                  <span className="text-[11px] text-muted-foreground">
+                    변형 강도 {advanced.denoiseStrength.toFixed(2)} (1 = 새로
+                    생성에 가까움)
+                  </span>
+                  <input
+                    max={0.95}
+                    min={0.1}
+                    onChange={(e) =>
+                      setAdvanced((a) => ({
+                        ...a,
+                        denoiseStrength: Number(e.target.value),
+                      }))
+                    }
+                    step={0.05}
+                    type="range"
+                    value={advanced.denoiseStrength}
+                  />
+                </>
+              ) : null}
+            </div>
 
             <Button
               className="h-11 text-[14px]"
@@ -687,6 +809,9 @@ export function GenerateView() {
         open={favOpen}
       />
       <ExpertPanel
+        advanced={advanced}
+        baseUrl={baseUrl}
+        onAdvancedChange={setAdvanced}
         onChange={setExpertSettings}
         onOpenChange={setExpertOpen}
         open={expertOpen}
