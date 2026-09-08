@@ -24,12 +24,20 @@ type Bump = { current: number };
  * off → "시작", booting → spinner + mm:ss + phase text, on → green "중지".
  * The `bump` ref lets the Generate flow force an immediate re-poll.
  */
-export function RunpodBadge({ bump }: { bump?: Bump }) {
+export function RunpodBadge({
+  bump,
+  onReady,
+}: {
+  bump?: Bump;
+  /** Fired when the pod's image API goes reachable (rising edge). */
+  onReady?: () => void;
+}) {
   const [status, setStatus] = useState<RunpodStatus | null>(null);
   const [busy, setBusy] = useState<null | "start" | "stop">(null);
   const [bootStart, setBootStart] = useState<number | null>(null);
   const [, setTick] = useState(0);
   const lastBump = useRef(0);
+  const wasReady = useRef(false);
 
   const poll = useCallback(async () => {
     try {
@@ -69,6 +77,15 @@ export function RunpodBadge({ bump }: { bump?: Bump }) {
       setBootStart(null);
     }
   }, [status?.generateReady, status?.desiredStatus]);
+
+  // Rising edge of generateReady → tell the parent to refresh (model list).
+  useEffect(() => {
+    const ready = Boolean(status?.generateReady);
+    if (ready && !wasReady.current) {
+      onReady?.();
+    }
+    wasReady.current = ready;
+  }, [status?.generateReady, onReady]);
 
   const onStart = useCallback(async () => {
     setBusy("start");

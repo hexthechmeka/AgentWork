@@ -192,34 +192,38 @@ export function GenerateView() {
     }
   }, [presets, sizePresetId]);
 
-  // Load the model list once the pod URL is known.
-  useEffect(() => {
+  // Fetch (or re-fetch) the model list from the pod. Called on mount and
+  // again whenever the pod becomes reachable (RunpodBadge onReady) — the
+  // list is empty while the pod is off, so without the re-fetch the user
+  // had to reload the page after starting it.
+  const loadModelList = useCallback(async () => {
     if (!baseUrl) {
       return;
     }
-    let cancelled = false;
-    getModels(baseUrl)
-      .then((r) => {
-        if (cancelled) {
-          return;
+    try {
+      const r = await getModels(baseUrl);
+      setModels(r.models);
+      setModelDetail(r.detail ?? []);
+      setModelNameState((current) => {
+        if (current && r.models.includes(current)) {
+          return current;
         }
-        setModels(r.models);
-        setModelDetail(r.detail ?? []);
         const saved = getDefaultModel();
-        const pick =
+        return (
           (saved && r.models.includes(saved) && saved) ||
           r.loaded_model ||
           r.models[0] ||
-          "";
-        setModelNameState(pick);
-      })
-      .catch(() => {
-        // pod probably off — the badge covers messaging
+          ""
+        );
       });
-    return () => {
-      cancelled = true;
-    };
+    } catch {
+      // pod probably off — the badge covers messaging
+    }
   }, [baseUrl]);
+
+  useEffect(() => {
+    loadModelList();
+  }, [loadModelList]);
 
   const setModelName = useCallback((name: string) => {
     setModelNameState(name);
@@ -330,6 +334,11 @@ export function GenerateView() {
         setStatusLine(map[phase] ?? null);
       });
       badgeBump.current += 1;
+
+      // pod is up now — refresh the catalog (it was empty while off)
+      if (models.length === 0) {
+        await loadModelList();
+      }
 
       // best-effort: make sure the chosen model is the resident one
       await loadModel(baseUrl, modelName).catch(() => undefined);
@@ -453,6 +462,8 @@ export function GenerateView() {
     seedText,
     recommended,
     advanced,
+    models.length,
+    loadModelList,
     mutateFolders,
   ]);
 
@@ -535,7 +546,7 @@ export function GenerateView() {
       <header className="flex items-center justify-between gap-3 border-border/50 border-b px-4 py-2.5">
         <div className="flex items-center gap-3">
           <h1 className="font-semibold text-[15px]">이미지 생성</h1>
-          <RunpodBadge bump={badgeBump} />
+          <RunpodBadge bump={badgeBump} onReady={loadModelList} />
         </div>
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
