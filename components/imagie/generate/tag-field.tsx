@@ -100,10 +100,10 @@ export function TagField({
         <Input {...common} ref={ref as React.Ref<HTMLInputElement>} />
       )}
       {items.length > 0 ? (
-        <div className="no-scrollbar flex gap-1.5 overflow-x-auto pb-0.5">
+        <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto pb-0.5">
           {items.map((entry) => (
             <button
-              className="flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] hover:bg-accent"
+              className="flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] hover:bg-accent"
               key={entry.tag}
               // mousedown fires before the field's blur, so `caret` is still valid
               onMouseDown={(e) => {

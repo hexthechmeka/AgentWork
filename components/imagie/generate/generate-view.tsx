@@ -7,6 +7,7 @@ import {
   ImageIcon,
   LockIcon,
   SlidersHorizontalIcon,
+  SquareIcon,
   StarIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -36,6 +37,7 @@ import {
   type ImagicianResult,
 } from "@/lib/imagie/imagician";
 import {
+  cancelGeneration,
   type GenerateParams,
   generateImage,
   getModels,
@@ -144,6 +146,7 @@ export function GenerateView() {
 
   const [favOpen, setFavOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [statusLine, setStatusLine] = useState<string | null>(null);
   const [progressPct, setProgressPct] = useState(0);
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
@@ -172,12 +175,10 @@ export function GenerateView() {
         negativePrompt?: string;
         modelName?: string;
       };
-      if (p.prompt) {
-        setFields((f) => ({ ...f, background: p.prompt ?? "" }));
-      }
-      if (p.negativePrompt) {
-        setNegative(p.negativePrompt);
-      }
+      // Full replace — the reused prompt is a flat string, so it goes into
+      // the raw-override field and the structured fields are cleared.
+      setFields({ ...EMPTY_PROMPT_FIELDS, raw: p.prompt ?? "" });
+      setNegative(p.negativePrompt || DEFAULT_NEGATIVE);
       if (p.modelName) {
         setModelNameState(p.modelName);
       }
@@ -394,47 +395,63 @@ export function GenerateView() {
       setSelectedId(made[0]?.id ?? null);
       setPreviewSrc(made[0]?.src ?? null);
 
-      // auto-save to "임시"
-      setStatusLine("저장 중…");
-      const persistRes = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/imagie/images`,
-        {
-          body: JSON.stringify({
-            images: made.map((m) => ({
-              metadata: advancedMetadata(advanced),
-              png: m.src,
-              seed: m.seed,
-              thumb: m.thumb,
-            })),
-            params: {
-              guidanceScale: finalParams.guidance_scale ?? 0,
-              height,
-              modelName,
-              negativePrompt: negative,
-              prompt: finalParams.prompt,
-              sampler: finalParams.sampler ?? "",
-              steps: finalParams.steps ?? 0,
-              width,
-            },
-          }),
-          headers: { "Content-Type": "application/json" },
-          method: "POST",
+      // auto-save to "임시" — one request per image. Each base64 PNG can be
+      // several MB, and a whole batch in one body blows past Vercel's
+      // ~4.5MB request limit (that was the "saved failed" on big batches).
+      const persistParams = {
+        guidanceScale: finalParams.guidance_scale ?? 0,
+        height,
+        modelName,
+        negativePrompt: negative,
+        prompt: finalParams.prompt,
+        sampler: finalParams.sampler ?? "",
+        steps: finalParams.steps ?? 0,
+        width,
+      };
+      let savedCount = 0;
+      for (let i = 0; i < made.length; i += 1) {
+        const m = made[i];
+        setStatusLine(`저장 중… ${i + 1}/${made.length}`);
+        try {
+          // biome-ignore lint/performance/noAwaitInLoops: keep each request small
+          const r = await fetch(
+            `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/imagie/images`,
+            {
+              body: JSON.stringify({
+                images: [
+                  {
+                    metadata: advancedMetadata(advanced),
+                    png: m.src,
+                    seed: m.seed,
+                    thumb: m.thumb,
+                  },
+                ],
+                params: persistParams,
+              }),
+              headers: { "Content-Type": "application/json" },
+              method: "POST",
+            }
+          );
+          if (!r.ok) {
+            continue;
+          }
+          const body = (await r.json()) as { images: Array<{ id: string }> };
+          const dbId = body.images[0]?.id ?? null;
+          savedCount += 1;
+          setResults((prev) =>
+            prev.map((row) => (row.id === m.id ? { ...row, dbId } : row))
+          );
+        } catch {
+          // leave this one unsaved; report the shortfall below
         }
-      );
-      if (persistRes.ok) {
-        const persisted = (await persistRes.json()) as {
-          images: Array<{ id: string }>;
-        };
-        setResults((prev) =>
-          prev.map((r) => {
-            const idx = made.findIndex((m) => m.id === r.id);
-            return idx >= 0 && persisted.images[idx]
-              ? { ...r, dbId: persisted.images[idx].id }
-              : r;
-          })
-        );
-        await mutateFolders();
+      }
+      await mutateFolders();
+      if (savedCount === made.length) {
         toast.success(`${made.length}장 생성 · 임시 폴더에 저장됨`);
+      } else if (savedCount > 0) {
+        toast.warning(
+          `${made.length}장 생성 · ${savedCount}장만 저장됨 (나머지 저장 실패)`
+        );
       } else {
         toast.warning("생성은 됐지만 저장에 실패했습니다");
       }
@@ -445,6 +462,7 @@ export function GenerateView() {
         clearInterval(poll);
       }
       setGenerating(false);
+      setCancelling(false);
       setStatusLine(null);
       setProgressPct(0);
     }
@@ -466,6 +484,23 @@ export function GenerateView() {
     loadModelList,
     mutateFolders,
   ]);
+
+  // Ask the backend to stop after the current step; generateImage() then
+  // resolves with `cancelled: true` and whatever finished, and the normal
+  // flow saves that.
+  const cancelRun = useCallback(async () => {
+    if (!baseUrl) {
+      return;
+    }
+    setCancelling(true);
+    setStatusLine("취소 중…");
+    try {
+      await cancelGeneration(baseUrl);
+    } catch {
+      toast.error("취소 요청 실패");
+      setCancelling(false);
+    }
+  }, [baseUrl]);
 
   const selected = results.find((r) => r.id === selectedId) ?? null;
 
@@ -763,23 +798,36 @@ export function GenerateView() {
               ) : null}
             </div>
 
-            <Button
-              className="h-11 text-[14px]"
-              disabled={generating}
-              onClick={runGenerate}
-            >
+            <div className="flex gap-2">
+              <Button
+                className="h-11 flex-1 text-[14px]"
+                disabled={generating}
+                onClick={runGenerate}
+              >
+                {generating ? (
+                  <>
+                    <Spinner />
+                    {statusLine ?? "생성 중…"}
+                  </>
+                ) : (
+                  <>
+                    <ImageIcon className="size-4" />
+                    생성
+                  </>
+                )}
+              </Button>
               {generating ? (
-                <>
-                  <Spinner />
-                  {statusLine ?? "생성 중…"}
-                </>
-              ) : (
-                <>
-                  <ImageIcon className="size-4" />
-                  생성
-                </>
-              )}
-            </Button>
+                <Button
+                  className="h-11"
+                  disabled={cancelling}
+                  onClick={cancelRun}
+                  variant="outline"
+                >
+                  <SquareIcon className="size-4" />
+                  {cancelling ? "취소 중…" : "취소"}
+                </Button>
+              ) : null}
+            </div>
           </div>
         </div>
 

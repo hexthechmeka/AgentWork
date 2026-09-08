@@ -11,6 +11,12 @@ export type CharacterField = {
 };
 
 export type PromptFields = {
+  /**
+   * Verbatim prompt override. When non-empty the structured fields below are
+   * ignored — used by "이 설정으로 다시 생성" (which only has the flattened
+   * string) and by anyone who'd rather just type one prompt.
+   */
+  raw?: string;
   /** ① artist / style tags. */
   artist?: string;
   /** ② one or more characters. */
@@ -29,6 +35,7 @@ export const EMPTY_PROMPT_FIELDS: PromptFields = {
   characters: [{ appearance: "", name: "" }],
   composition: "",
   pose: "",
+  raw: "",
 };
 
 export const DEFAULT_NEGATIVE =
@@ -62,6 +69,11 @@ function joinChar(c: CharacterField): string {
  * illustrious/danbooru models are trained on.
  */
 export function joinPromptFields(f: PromptFields): string {
+  const raw = clean(f.raw);
+  if (raw) {
+    return raw;
+  }
+
   const parts: string[] = [];
 
   if (clean(f.artist)) {

@@ -49,89 +49,115 @@ export function PromptFieldsEditor({
     [value, onChange]
   );
 
+  const rawActive = (value.raw ?? "").trim().length > 0;
+
   return (
     <div className="flex flex-col gap-3">
-      <Row label="① 아티스트 / 화풍">
+      <Row label="프롬프트 직접 입력 (입력하면 아래 항목은 무시)">
         <TagField
-          onChange={(v) => patch({ artist: v })}
-          placeholder="artist:xxx, official art, ..."
-          value={value.artist ?? ""}
-        />
-      </Row>
-
-      <div className="flex flex-col gap-2">
-        <span className="font-medium text-[12px] text-muted-foreground">
-          ② 캐릭터
-        </span>
-        {value.characters.map((c, i) => (
-          <div
-            className="flex flex-col gap-1.5 rounded-lg border border-border/60 p-2"
-            // biome-ignore lint/suspicious/noArrayIndexKey: character rows have no stable id
-            key={i}
-          >
-            <div className="flex items-center gap-2">
-              <Input
-                className="h-8"
-                onChange={(e) => patchChar(i, { name: e.target.value })}
-                placeholder="이름 / 작품 (예: ahri \(league of legends\))"
-                value={c.name ?? ""}
-              />
-              {value.characters.length > 1 ? (
-                <Button
-                  className="size-8 shrink-0"
-                  onClick={() => removeChar(i)}
-                  size="icon"
-                  type="button"
-                  variant="ghost"
-                >
-                  <XIcon className="size-4" />
-                </Button>
-              ) : null}
-            </div>
-            <TagField
-              className="min-h-16 text-[13px]"
-              multiline
-              onChange={(v) => patchChar(i, { appearance: v })}
-              placeholder="외형 / 의상 태그: 1girl, long hair, red dress, ..."
-              value={c.appearance ?? ""}
-            />
-          </div>
-        ))}
-        <Button
-          className="w-fit"
-          onClick={addChar}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          <PlusIcon className="size-3.5" />
-          캐릭터 추가
-        </Button>
-      </div>
-
-      <Row label="③ 포즈 / 표정">
-        <TagField
-          onChange={(v) => patch({ pose: v })}
-          placeholder="standing, looking at viewer, smile, ..."
-          value={value.pose ?? ""}
-        />
-      </Row>
-      <Row label="④ 구도 (샷 타입 / 카메라 앵글)">
-        <TagField
-          onChange={(v) => patch({ composition: v })}
-          placeholder="upper body, from above, wide shot, ..."
-          value={value.composition ?? ""}
-        />
-      </Row>
-      <Row label="⑤ 배경 / 디테일">
-        <TagField
-          className="min-h-16 text-[13px]"
+          className="min-h-12 text-[13px]"
           multiline
-          onChange={(v) => patch({ background: v })}
-          placeholder="detailed background, sunset, cinematic lighting, ..."
-          value={value.background ?? ""}
+          onChange={(v) => patch({ raw: v })}
+          placeholder="전체 프롬프트를 그대로 입력 / '이 설정으로 다시 생성'이 여기 채워집니다"
+          value={value.raw ?? ""}
         />
       </Row>
+
+      <div
+        className={
+          rawActive
+            ? "pointer-events-none flex flex-col gap-3 opacity-40"
+            : "flex flex-col gap-3"
+        }
+      >
+        <Row label="① 아티스트 / 화풍">
+          <TagField
+            className="min-h-12 text-[13px]"
+            multiline
+            onChange={(v) => patch({ artist: v })}
+            placeholder="artist:xxx, official art, ..."
+            value={value.artist ?? ""}
+          />
+        </Row>
+
+        <div className="flex flex-col gap-2">
+          <span className="font-medium text-[12px] text-muted-foreground">
+            ② 캐릭터
+          </span>
+          {value.characters.map((c, i) => (
+            <div
+              className="flex flex-col gap-1.5 rounded-lg border border-border/60 p-2"
+              // biome-ignore lint/suspicious/noArrayIndexKey: character rows have no stable id
+              key={i}
+            >
+              <div className="flex items-center gap-2">
+                <Input
+                  className="h-8"
+                  onChange={(e) => patchChar(i, { name: e.target.value })}
+                  placeholder="이름 / 작품 (예: ahri \(league of legends\))"
+                  value={c.name ?? ""}
+                />
+                {value.characters.length > 1 ? (
+                  <Button
+                    className="size-8 shrink-0"
+                    onClick={() => removeChar(i)}
+                    size="icon"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <XIcon className="size-4" />
+                  </Button>
+                ) : null}
+              </div>
+              <TagField
+                className="min-h-16 text-[13px]"
+                multiline
+                onChange={(v) => patchChar(i, { appearance: v })}
+                placeholder="외형 / 의상 태그: 1girl, long hair, red dress, ..."
+                value={c.appearance ?? ""}
+              />
+            </div>
+          ))}
+          <Button
+            className="w-fit"
+            onClick={addChar}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <PlusIcon className="size-3.5" />
+            캐릭터 추가
+          </Button>
+        </div>
+
+        <Row label="③ 포즈 / 표정">
+          <TagField
+            className="min-h-12 text-[13px]"
+            multiline
+            onChange={(v) => patch({ pose: v })}
+            placeholder="standing, looking at viewer, smile, ..."
+            value={value.pose ?? ""}
+          />
+        </Row>
+        <Row label="④ 구도 (샷 타입 / 카메라 앵글)">
+          <TagField
+            className="min-h-12 text-[13px]"
+            multiline
+            onChange={(v) => patch({ composition: v })}
+            placeholder="upper body, from above, wide shot, ..."
+            value={value.composition ?? ""}
+          />
+        </Row>
+        <Row label="⑤ 배경 / 디테일">
+          <TagField
+            className="min-h-16 text-[13px]"
+            multiline
+            onChange={(v) => patch({ background: v })}
+            placeholder="detailed background, sunset, cinematic lighting, ..."
+            value={value.background ?? ""}
+          />
+        </Row>
+      </div>
     </div>
   );
 }
