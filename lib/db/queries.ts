@@ -1606,6 +1606,48 @@ export async function deleteImageRows(ids: string[]): Promise<void> {
   }
 }
 
+/** Bulk move (same expiresAt rule as moveImageToFolder). */
+export async function bulkMoveImages(
+  ids: string[],
+  folderId: string
+): Promise<void> {
+  if (ids.length === 0) {
+    return;
+  }
+  try {
+    const { tempId } = await ensureSystemFolders();
+    const expiresAt =
+      folderId === tempId ? new Date(Date.now() + IMAGIE_TEMP_TTL_MS) : null;
+    await db
+      .update(imagieImage)
+      .set({ expiresAt, folderId })
+      .where(inArray(imagieImage.id, ids));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/** Rows for the given ids (blob URLs needed before a bulk delete). */
+export async function getImagesByIds(
+  ids: string[]
+): Promise<Array<{ id: string; blobUrl: string; thumbUrl: string }>> {
+  if (ids.length === 0) {
+    return [];
+  }
+  try {
+    return await db
+      .select({
+        blobUrl: imagieImage.blobUrl,
+        id: imagieImage.id,
+        thumbUrl: imagieImage.thumbUrl,
+      })
+      .from(imagieImage)
+      .where(inArray(imagieImage.id, ids));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
 /** Oldest "임시" images beyond IMAGIE_TEMP_MAX (blob URLs + ids to clean up). */
 export async function tempOverflowImages(): Promise<
   Array<{ id: string; blobUrl: string; thumbUrl: string }>
