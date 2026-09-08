@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
   DicesIcon,
   ImageIcon,
   LockIcon,
@@ -143,6 +145,7 @@ export function GenerateView() {
   const [favOpen, setFavOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [statusLine, setStatusLine] = useState<string | null>(null);
+  const [progressPct, setProgressPct] = useState(0);
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const [results, setResults] = useState<ResultImage[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -311,7 +314,8 @@ export function GenerateView() {
     const finalParams = applyAdvancedToParams(params, advanced);
 
     setGenerating(true);
-    setPreviewSrc(null);
+    setProgressPct(0);
+    // Keep the previously shown image up until a new frame/result replaces it.
     setStatusLine("Pod 준비 중…");
     let poll: ReturnType<typeof setInterval> | null = null;
     try {
@@ -338,6 +342,11 @@ export function GenerateView() {
             getPreview(baseUrl),
           ]);
           if (pr.active) {
+            const total = pr.batch_total || 1;
+            const pct = Math.round(
+              ((pr.batch_index + pr.percent / 100) / total) * 100
+            );
+            setProgressPct(Math.min(99, Math.max(0, pct)));
             setStatusLine(
               `생성 중… ${pr.batch_index + 1}/${pr.batch_total} · ${pr.percent}%`
             );
@@ -428,6 +437,7 @@ export function GenerateView() {
       }
       setGenerating(false);
       setStatusLine(null);
+      setProgressPct(0);
     }
   }, [
     fields,
@@ -447,6 +457,50 @@ export function GenerateView() {
   ]);
 
   const selected = results.find((r) => r.id === selectedId) ?? null;
+
+  // ← / → cycle through this session's results (strip order: newest at left).
+  const cyclePreview = useCallback(
+    (dir: -1 | 1) => {
+      setResults((prev) => {
+        if (prev.length < 2) {
+          return prev;
+        }
+        const cur = prev.findIndex((r) => r.id === selectedId);
+        const start = cur < 0 ? 0 : cur;
+        const next = (start + dir + prev.length) % prev.length;
+        const target = prev[next];
+        setSelectedId(target.id);
+        setPreviewSrc(target.src);
+        return prev;
+      });
+    },
+    [selectedId]
+  );
+
+  useEffect(() => {
+    if (results.length < 2) {
+      return;
+    }
+    const onKey = (e: KeyboardEvent) => {
+      const el = document.activeElement;
+      const tag = el?.tagName;
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        (el as HTMLElement | null)?.isContentEditable
+      ) {
+        return;
+      }
+      if (e.key === "ArrowLeft") {
+        cyclePreview(-1);
+      } else if (e.key === "ArrowRight") {
+        cyclePreview(1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [results.length, cyclePreview]);
 
   const saveSelected = useCallback(async () => {
     if (!(selected?.dbId && saveFolderId)) {
@@ -720,7 +774,23 @@ export function GenerateView() {
 
         {/* preview + session strip */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex flex-1 items-center justify-center overflow-hidden bg-muted/30 p-4">
+          {/* dedicated progress bar (spec: not overlaid on the image) */}
+          {generating ? (
+            <div className="flex flex-col gap-1 border-border/50 border-b px-4 py-2">
+              <div className="flex items-center justify-between text-[12px] text-muted-foreground">
+                <span>{statusLine ?? "생성 중…"}</span>
+                <span className="tabular-nums">{progressPct}%</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-[width] duration-300"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+            </div>
+          ) : null}
+
+          <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-muted/30 p-4">
             {previewSrc ? (
               // biome-ignore lint/performance/noImgElement: data URL preview
               <img
@@ -730,11 +800,37 @@ export function GenerateView() {
               />
             ) : (
               <div className="text-center text-[13px] text-muted-foreground">
-                {generating
-                  ? (statusLine ?? "생성 중…")
-                  : "생성 결과가 여기 표시됩니다"}
+                {generating ? "" : "생성 결과가 여기 표시됩니다"}
               </div>
             )}
+
+            {results.length > 1 ? (
+              <>
+                <button
+                  aria-label="이전"
+                  className="-translate-y-1/2 absolute top-1/2 left-2 flex size-8 items-center justify-center rounded-full bg-background/70 text-foreground shadow hover:bg-background"
+                  onClick={() => cyclePreview(-1)}
+                  type="button"
+                >
+                  <ChevronLeftIcon className="size-4" />
+                </button>
+                <button
+                  aria-label="다음"
+                  className="-translate-y-1/2 absolute top-1/2 right-2 flex size-8 items-center justify-center rounded-full bg-background/70 text-foreground shadow hover:bg-background"
+                  onClick={() => cyclePreview(1)}
+                  type="button"
+                >
+                  <ChevronRightIcon className="size-4" />
+                </button>
+                <span className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-background/70 px-2 py-0.5 text-[11px] text-muted-foreground">
+                  {Math.max(
+                    0,
+                    results.findIndex((r) => r.id === selectedId)
+                  ) + 1}{" "}
+                  / {results.length} · ← →
+                </span>
+              </>
+            ) : null}
           </div>
 
           <div className="border-border/50 border-t p-3">

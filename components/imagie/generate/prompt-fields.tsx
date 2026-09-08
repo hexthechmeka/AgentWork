@@ -2,13 +2,14 @@
 
 import { PlusIcon, XIcon } from "lucide-react";
 import { useCallback } from "react";
+import { TagField } from "@/components/imagie/generate/tag-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import type { CharacterField, PromptFields } from "@/lib/imagie/prompt";
 
 // Spec §6 — fixed field order: ① artist ② characters (repeatable)
-// ③ pose/expression ④ composition ⑤ background/detail.
+// ③ pose/expression ④ composition ⑤ background/detail. Tag-heavy fields use
+// TagField (danbooru autocomplete under the caret).
 export function PromptFieldsEditor({
   value,
   onChange,
@@ -51,8 +52,8 @@ export function PromptFieldsEditor({
   return (
     <div className="flex flex-col gap-3">
       <Row label="① 아티스트 / 화풍">
-        <Input
-          onChange={(e) => patch({ artist: e.target.value })}
+        <TagField
+          onChange={(v) => patch({ artist: v })}
           placeholder="artist:xxx, official art, ..."
           value={value.artist ?? ""}
         />
@@ -87,9 +88,10 @@ export function PromptFieldsEditor({
                 </Button>
               ) : null}
             </div>
-            <Textarea
+            <TagField
               className="min-h-16 text-[13px]"
-              onChange={(e) => patchChar(i, { appearance: e.target.value })}
+              multiline
+              onChange={(v) => patchChar(i, { appearance: v })}
               placeholder="외형 / 의상 태그: 1girl, long hair, red dress, ..."
               value={c.appearance ?? ""}
             />
@@ -108,23 +110,24 @@ export function PromptFieldsEditor({
       </div>
 
       <Row label="③ 포즈 / 표정">
-        <Input
-          onChange={(e) => patch({ pose: e.target.value })}
+        <TagField
+          onChange={(v) => patch({ pose: v })}
           placeholder="standing, looking at viewer, smile, ..."
           value={value.pose ?? ""}
         />
       </Row>
       <Row label="④ 구도 (샷 타입 / 카메라 앵글)">
-        <Input
-          onChange={(e) => patch({ composition: e.target.value })}
+        <TagField
+          onChange={(v) => patch({ composition: v })}
           placeholder="upper body, from above, wide shot, ..."
           value={value.composition ?? ""}
         />
       </Row>
       <Row label="⑤ 배경 / 디테일">
-        <Textarea
+        <TagField
           className="min-h-16 text-[13px]"
-          onChange={(e) => patch({ background: e.target.value })}
+          multiline
+          onChange={(v) => patch({ background: v })}
           placeholder="detailed background, sunset, cinematic lighting, ..."
           value={value.background ?? ""}
         />
