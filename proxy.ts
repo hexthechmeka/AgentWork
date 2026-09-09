@@ -38,6 +38,13 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Vultr dev-agent server-to-server routes authenticate with a shared
+  // secret inside the handler — no session cookie, so skip the guest
+  // redirect and let the handler return 401 if the secret is wrong.
+  if (pathname === "/api/usage/check" || pathname === "/api/usage/log") {
+    return NextResponse.next();
+  }
+
   const token = await getToken({
     req: request,
     secret: process.env.AUTH_SECRET,

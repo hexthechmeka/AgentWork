@@ -1,7 +1,11 @@
 "use client";
 
 import { formatDistanceToNow } from "date-fns";
-import { MessageSquarePlusIcon, MessagesSquareIcon } from "lucide-react";
+import {
+  MessageSquarePlusIcon,
+  MessagesSquareIcon,
+  TerminalIcon,
+} from "lucide-react";
 import { useCallback } from "react";
 import type { Chat } from "@/lib/db/schema";
 import { cn } from "@/lib/utils";
@@ -42,11 +46,13 @@ export function ProjectOverview({
   chats,
   onOpenChat,
   onNewChat,
+  onStartDev,
 }: {
   projectName: string;
   chats: Chat[];
   onOpenChat: (chatId: string) => void;
   onNewChat: () => void;
+  onStartDev: () => void;
 }) {
   const planningChats = chats
     .filter((c) => c.kind !== "unified")
@@ -69,16 +75,29 @@ export function ProjectOverview({
               {unifiedChat ? " · 통합 채팅 1개" : ""}
             </p>
           </div>
-          <button
-            className={cn(
-              "flex shrink-0 items-center gap-2 rounded-lg bg-foreground px-3.5 py-2 font-medium text-[13px] text-background transition-opacity",
-              "hover:opacity-90"
-            )}
-            onClick={onNewChat}
-            type="button"
-          >
-            <MessageSquarePlusIcon className="size-4" />새 대화
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              className={cn(
+                "flex items-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2 font-medium text-[13px] text-foreground transition-colors",
+                "hover:bg-accent"
+              )}
+              onClick={onStartDev}
+              type="button"
+            >
+              <TerminalIcon className="size-4" />
+              개발 시작
+            </button>
+            <button
+              className={cn(
+                "flex items-center gap-2 rounded-lg bg-foreground px-3.5 py-2 font-medium text-[13px] text-background transition-opacity",
+                "hover:opacity-90"
+              )}
+              onClick={onNewChat}
+              type="button"
+            >
+              <MessageSquarePlusIcon className="size-4" />새 대화
+            </button>
+          </div>
         </header>
 
         <section className="flex flex-col gap-2">

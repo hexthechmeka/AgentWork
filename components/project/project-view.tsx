@@ -23,6 +23,7 @@ import { DEFAULT_SPEC_MODEL_ID } from "@/lib/ai/models";
 import type { Chat } from "@/lib/db/schema";
 import type { ChatMessage } from "@/lib/types";
 import { cn, getTextFromMessage } from "@/lib/utils";
+import { DevConsole } from "./dev-console";
 import { type GlmComment, GlmPanel } from "./glm-panel";
 import { type DocMode, MeetingDocumentPanel } from "./meeting-document-panel";
 import { ProjectOverview } from "./project-overview";
@@ -162,6 +163,7 @@ export function ProjectView({
 
   const [isMeetingOpen, setIsMeetingOpen] = useState(false);
   const [isGlmOpen, setIsGlmOpen] = useState(false);
+  const [isDevConsoleOpen, setIsDevConsoleOpen] = useState(false);
   const [autoMode, setAutoMode] = useState(false);
   const [isMeetingLive, setIsMeetingLive] = useState(false);
 
@@ -184,6 +186,13 @@ export function ProjectView({
 
   const toggleGlm = useCallback(() => {
     setIsGlmOpen((prev) => !prev);
+  }, []);
+
+  const openDevConsole = useCallback(() => {
+    setIsDevConsoleOpen(true);
+  }, []);
+  const closeDevConsole = useCallback(() => {
+    setIsDevConsoleOpen(false);
   }, []);
 
   const toggleMeetingLive = useCallback(() => {
@@ -361,17 +370,32 @@ export function ProjectView({
 
   if (showOverview) {
     return (
-      <ProjectOverview
-        chats={chats}
-        onNewChat={handleNewChat}
-        onOpenChat={goToChat}
-        projectName={projectName}
-      />
+      <>
+        <ProjectOverview
+          chats={chats}
+          onNewChat={handleNewChat}
+          onOpenChat={goToChat}
+          onStartDev={openDevConsole}
+          projectName={projectName}
+        />
+        <DevConsole
+          initialInstruction={docContent === PLACEHOLDER_DOC ? "" : docContent}
+          onClose={closeDevConsole}
+          open={isDevConsoleOpen}
+          projectId={projectId}
+        />
+      </>
     );
   }
 
   return (
     <div className="flex h-dvh w-full flex-col">
+      <DevConsole
+        initialInstruction={docContent === PLACEHOLDER_DOC ? "" : docContent}
+        onClose={closeDevConsole}
+        open={isDevConsoleOpen}
+        projectId={projectId}
+      />
       <div className="flex h-11 shrink-0 items-center gap-3 border-border/40 border-b bg-sidebar px-3">
         <button
           className="rounded-md px-2 py-1 font-medium text-[13px] text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground"
@@ -397,6 +421,13 @@ export function ProjectView({
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          <button
+            className="rounded-md px-2 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground"
+            onClick={openDevConsole}
+            type="button"
+          >
+            개발 콘솔
+          </button>
           <span className="text-[12px] text-muted-foreground">자동 모드</span>
           <Switch checked={autoMode} onCheckedChange={setAutoMode} />
         </div>
