@@ -26,7 +26,12 @@ export async function GET(request: Request) {
   }
   const limit = Number(url.searchParams.get("limit") ?? 200);
   const offset = Number(url.searchParams.get("offset") ?? 0);
-  const images = await listImages({ folderId, limit, offset });
+  const images = await listImages({
+    folderId,
+    limit,
+    offset,
+    userId: session.user.id,
+  });
   return Response.json({ images });
 }
 
@@ -67,7 +72,8 @@ export async function POST(request: Request) {
     return Response.json({ error: "Bad request" }, { status: 400 });
   }
 
-  const { tempId } = await ensureSystemFolders();
+  const userId = session.user.id;
+  const { tempId } = await ensureSystemFolders(userId);
   const storage = getMediaStorage();
   const p = body.params;
   const expiresAt = new Date(Date.now() + IMAGIE_TEMP_TTL_MS);
@@ -96,13 +102,14 @@ export async function POST(request: Request) {
         seed: img.seed ?? null,
         steps: p.steps,
         thumbUrl,
+        userId,
         width: p.width,
       };
     })
   );
 
   await insertImages(rows);
-  const trimmed = await trimTempFolder().catch(() => 0);
+  const trimmed = await trimTempFolder(userId).catch(() => 0);
 
   return Response.json({
     images: rows.map((r) => ({

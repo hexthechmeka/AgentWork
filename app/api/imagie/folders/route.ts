@@ -11,8 +11,8 @@ export async function GET() {
   if (!session?.user) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
-  await ensureSystemFolders();
-  const folders = await listFolders();
+  await ensureSystemFolders(session.user.id);
+  const folders = await listFolders(session.user.id);
   return Response.json({ folders });
 }
 
@@ -29,6 +29,6 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ error: "Bad request" }, { status: 400 });
   }
-  const folder = await createFolder(body.name.trim());
+  const folder = await createFolder(session.user.id, body.name.trim());
   return Response.json({ folder }, { status: 201 });
 }

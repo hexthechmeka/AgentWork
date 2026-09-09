@@ -1392,10 +1392,10 @@ export const IMAGIE_TEMP_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const IMAGIE_TEMP_MAX = 200;
 
 /**
- * Make sure the two system folders exist (idempotent) and return their ids.
- * Matched by name+isSystem so an older seed with different UUIDs still works.
+ * Make sure this account's two system folders exist (idempotent) and return
+ * their ids. Matched by name+isSystem+userId so each account keeps its own.
  */
-export async function ensureSystemFolders(): Promise<{
+export async function ensureSystemFolders(userId: string): Promise<{
   unfiledId: string;
   tempId: string;
 }> {
@@ -1403,7 +1403,7 @@ export async function ensureSystemFolders(): Promise<{
     const rows = await db
       .select()
       .from(folder)
-      .where(eq(folder.isSystem, true));
+      .where(and(eq(folder.isSystem, true), eq(folder.userId, userId)));
     const find = (name: string) => rows.find((r) => r.name === name)?.id;
 
     let unfiledId = find(IMAGIE_UNFILED);
@@ -1412,14 +1412,14 @@ export async function ensureSystemFolders(): Promise<{
     if (!unfiledId) {
       const [row] = await db
         .insert(folder)
-        .values({ isSystem: true, name: IMAGIE_UNFILED })
+        .values({ isSystem: true, name: IMAGIE_UNFILED, userId })
         .returning({ id: folder.id });
       unfiledId = row.id;
     }
     if (!tempId) {
       const [row] = await db
         .insert(folder)
-        .values({ isSystem: true, name: IMAGIE_TEMP })
+        .values({ isSystem: true, name: IMAGIE_TEMP, userId })
         .returning({ id: folder.id });
       tempId = row.id;
     }
@@ -1434,16 +1434,18 @@ export type FolderWithMeta = Folder & {
   coverThumbUrl: string | null;
 };
 
-export async function listFolders(): Promise<FolderWithMeta[]> {
+export async function listFolders(userId: string): Promise<FolderWithMeta[]> {
   try {
     const folders = await db
       .select()
       .from(folder)
+      .where(eq(folder.userId, userId))
       .orderBy(desc(folder.isSystem), asc(folder.createdAt));
 
     const counts = await db
       .select({ folderId: imagieImage.folderId, n: count() })
       .from(imagieImage)
+      .where(eq(imagieImage.userId, userId))
       .groupBy(imagieImage.folderId);
     const countMap = new Map(counts.map((c) => [c.folderId, Number(c.n)]));
 
@@ -1469,20 +1471,29 @@ export async function listFolders(): Promise<FolderWithMeta[]> {
   }
 }
 
-export async function getFolderById(id: string): Promise<Folder | null> {
+export async function getFolderById(
+  id: string,
+  userId: string
+): Promise<Folder | null> {
   try {
-    const [row] = await db.select().from(folder).where(eq(folder.id, id));
+    const [row] = await db
+      .select()
+      .from(folder)
+      .where(and(eq(folder.id, id), eq(folder.userId, userId)));
     return row ?? null;
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }
 }
 
-export async function createFolder(name: string): Promise<Folder> {
+export async function createFolder(
+  userId: string,
+  name: string
+): Promise<Folder> {
   try {
     const [row] = await db
       .insert(folder)
-      .values({ isSystem: false, name })
+      .values({ isSystem: false, name, userId })
       .returning();
     return row;
   } catch (error) {
@@ -1490,38 +1501,52 @@ export async function createFolder(name: string): Promise<Folder> {
   }
 }
 
-export async function renameFolder(id: string, name: string) {
+export async function renameFolder(id: string, userId: string, name: string) {
   try {
     await db
       .update(folder)
       .set({ name })
-      .where(and(eq(folder.id, id), eq(folder.isSystem, false)));
+      .where(
+        and(
+          eq(folder.id, id),
+          eq(folder.userId, userId),
+          eq(folder.isSystem, false)
+        )
+      );
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }
 }
 
 /** Delete a custom folder; its images move to "미분류" (never hard-deleted). */
-export async function deleteFolder(id: string) {
+export async function deleteFolder(id: string, userId: string) {
   try {
-    const { unfiledId } = await ensureSystemFolders();
+    const { unfiledId } = await ensureSystemFolders(userId);
     await db
       .update(imagieImage)
       .set({ folderId: unfiledId })
-      .where(eq(imagieImage.folderId, id));
+      .where(and(eq(imagieImage.folderId, id), eq(imagieImage.userId, userId)));
     await db
       .delete(folder)
-      .where(and(eq(folder.id, id), eq(folder.isSystem, false)));
+      .where(
+        and(
+          eq(folder.id, id),
+          eq(folder.userId, userId),
+          eq(folder.isSystem, false)
+        )
+      );
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }
 }
 
 export async function listImages({
+  userId,
   folderId,
   limit = 200,
   offset = 0,
 }: {
+  userId: string;
   folderId: string;
   limit?: number;
   offset?: number;
@@ -1530,7 +1555,9 @@ export async function listImages({
     return await db
       .select()
       .from(imagieImage)
-      .where(eq(imagieImage.folderId, folderId))
+      .where(
+        and(eq(imagieImage.folderId, folderId), eq(imagieImage.userId, userId))
+      )
       .orderBy(desc(imagieImage.createdAt))
       .limit(limit)
       .offset(offset);
@@ -1539,12 +1566,15 @@ export async function listImages({
   }
 }
 
-export async function getImageById(id: string): Promise<ImagieImage | null> {
+export async function getImageById(
+  id: string,
+  userId: string
+): Promise<ImagieImage | null> {
   try {
     const [row] = await db
       .select()
       .from(imagieImage)
-      .where(eq(imagieImage.id, id));
+      .where(and(eq(imagieImage.id, id), eq(imagieImage.userId, userId)));
     return row ?? null;
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
@@ -1553,6 +1583,7 @@ export async function getImageById(id: string): Promise<ImagieImage | null> {
 
 export type NewImagieImage = {
   id: string;
+  userId: string;
   folderId: string;
   blobUrl: string;
   thumbUrl: string;
@@ -1581,21 +1612,42 @@ export async function insertImages(rows: NewImagieImage[]): Promise<void> {
 }
 
 /** Move an image to a folder. Any folder but "임시" makes it permanent. */
-export async function moveImageToFolder(id: string, folderId: string) {
+export async function moveImageToFolder(
+  id: string,
+  userId: string,
+  folderId: string
+) {
   try {
-    const { tempId } = await ensureSystemFolders();
+    const { tempId } = await ensureSystemFolders(userId);
     const expiresAt =
       folderId === tempId ? new Date(Date.now() + IMAGIE_TEMP_TTL_MS) : null;
     await db
       .update(imagieImage)
       .set({ expiresAt, folderId })
-      .where(eq(imagieImage.id, id));
+      .where(and(eq(imagieImage.id, id), eq(imagieImage.userId, userId)));
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }
 }
 
-export async function deleteImageRows(ids: string[]): Promise<void> {
+export async function deleteImageRows(
+  ids: string[],
+  userId: string
+): Promise<void> {
+  if (ids.length === 0) {
+    return;
+  }
+  try {
+    await db
+      .delete(imagieImage)
+      .where(and(inArray(imagieImage.id, ids), eq(imagieImage.userId, userId)));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/** Unscoped delete by id — cron use only (rows already filtered by expiry). */
+export async function hardDeleteImageRows(ids: string[]): Promise<void> {
   if (ids.length === 0) {
     return;
   }
@@ -1609,19 +1661,20 @@ export async function deleteImageRows(ids: string[]): Promise<void> {
 /** Bulk move (same expiresAt rule as moveImageToFolder). */
 export async function bulkMoveImages(
   ids: string[],
+  userId: string,
   folderId: string
 ): Promise<void> {
   if (ids.length === 0) {
     return;
   }
   try {
-    const { tempId } = await ensureSystemFolders();
+    const { tempId } = await ensureSystemFolders(userId);
     const expiresAt =
       folderId === tempId ? new Date(Date.now() + IMAGIE_TEMP_TTL_MS) : null;
     await db
       .update(imagieImage)
       .set({ expiresAt, folderId })
-      .where(inArray(imagieImage.id, ids));
+      .where(and(inArray(imagieImage.id, ids), eq(imagieImage.userId, userId)));
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }
@@ -1629,7 +1682,8 @@ export async function bulkMoveImages(
 
 /** Rows for the given ids (blob URLs needed before a bulk delete). */
 export async function getImagesByIds(
-  ids: string[]
+  ids: string[],
+  userId: string
 ): Promise<Array<{ id: string; blobUrl: string; thumbUrl: string }>> {
   if (ids.length === 0) {
     return [];
@@ -1642,18 +1696,18 @@ export async function getImagesByIds(
         thumbUrl: imagieImage.thumbUrl,
       })
       .from(imagieImage)
-      .where(inArray(imagieImage.id, ids));
+      .where(and(inArray(imagieImage.id, ids), eq(imagieImage.userId, userId)));
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }
 }
 
 /** Oldest "임시" images beyond IMAGIE_TEMP_MAX (blob URLs + ids to clean up). */
-export async function tempOverflowImages(): Promise<
-  Array<{ id: string; blobUrl: string; thumbUrl: string }>
-> {
+export async function tempOverflowImages(
+  userId: string
+): Promise<Array<{ id: string; blobUrl: string; thumbUrl: string }>> {
   try {
-    const { tempId } = await ensureSystemFolders();
+    const { tempId } = await ensureSystemFolders(userId);
     const [{ n }] = await db
       .select({ n: count() })
       .from(imagieImage)
@@ -1677,12 +1731,16 @@ export async function tempOverflowImages(): Promise<
   }
 }
 
-/** "임시" images whose expiresAt has passed (blob URLs + ids to clean up). */
+/**
+ * All "임시" images past their TTL, across every account — the cron sweep.
+ * `expiresAt` is non-null only while an image sits in a temp folder (it's
+ * cleared on move), so no folder join is needed and expiry is correct
+ * regardless of which account owns the image.
+ */
 export async function expiredTempImages(): Promise<
   Array<{ id: string; blobUrl: string; thumbUrl: string }>
 > {
   try {
-    const { tempId } = await ensureSystemFolders();
     return await db
       .select({
         blobUrl: imagieImage.blobUrl,
@@ -1690,12 +1748,7 @@ export async function expiredTempImages(): Promise<
         thumbUrl: imagieImage.thumbUrl,
       })
       .from(imagieImage)
-      .where(
-        and(
-          eq(imagieImage.folderId, tempId),
-          lt(imagieImage.expiresAt, new Date())
-        )
-      );
+      .where(lt(imagieImage.expiresAt, new Date()));
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }
@@ -1703,11 +1756,14 @@ export async function expiredTempImages(): Promise<
 
 // ─── Favorite prompts ────────────────────────────────────────────────────
 
-export async function listFavoritePrompts(): Promise<FavoritePrompt[]> {
+export async function listFavoritePrompts(
+  userId: string
+): Promise<FavoritePrompt[]> {
   try {
     return await db
       .select()
       .from(favoritePrompt)
+      .where(eq(favoritePrompt.userId, userId))
       .orderBy(desc(favoritePrompt.createdAt));
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
@@ -1715,6 +1771,7 @@ export async function listFavoritePrompts(): Promise<FavoritePrompt[]> {
 }
 
 export async function createFavoritePrompt(input: {
+  userId: string;
   label: string | null;
   prompt: string;
   negativePrompt: string;
@@ -1729,6 +1786,7 @@ export async function createFavoritePrompt(input: {
 
 export async function updateFavoritePrompt(
   id: string,
+  userId: string,
   input: Partial<{
     label: string | null;
     prompt: string;
@@ -1736,39 +1794,49 @@ export async function updateFavoritePrompt(
   }>
 ) {
   try {
-    await db.update(favoritePrompt).set(input).where(eq(favoritePrompt.id, id));
+    await db
+      .update(favoritePrompt)
+      .set(input)
+      .where(and(eq(favoritePrompt.id, id), eq(favoritePrompt.userId, userId)));
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }
 }
 
-export async function deleteFavoritePrompt(id: string) {
+export async function deleteFavoritePrompt(id: string, userId: string) {
   try {
-    await db.delete(favoritePrompt).where(eq(favoritePrompt.id, id));
+    await db
+      .delete(favoritePrompt)
+      .where(and(eq(favoritePrompt.id, id), eq(favoritePrompt.userId, userId)));
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }
 }
 
-// ─── RunPod settings (single row, id = 1) ────────────────────────────────
+// ─── RunPod settings (one row per account) ───────────────────────────────
 
 /** Server-only: includes the raw apiKey. Never return this to the browser. */
-export async function getRunpodSetting(): Promise<RunpodSetting | null> {
+export async function getRunpodSetting(
+  userId: string
+): Promise<RunpodSetting | null> {
   try {
     const [row] = await db
       .select()
       .from(runpodSetting)
-      .where(eq(runpodSetting.id, 1));
+      .where(eq(runpodSetting.userId, userId));
     return row ?? null;
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }
 }
 
-export async function upsertRunpodSetting(input: {
-  podId?: string | null;
-  apiKey?: string | null;
-}) {
+export async function upsertRunpodSetting(
+  userId: string,
+  input: {
+    podId?: string | null;
+    apiKey?: string | null;
+  }
+) {
   try {
     const set: Record<string, unknown> = { updatedAt: new Date() };
     if (input.podId !== undefined) {
@@ -1781,10 +1849,10 @@ export async function upsertRunpodSetting(input: {
       .insert(runpodSetting)
       .values({
         apiKey: input.apiKey ?? null,
-        id: 1,
         podId: input.podId ?? null,
+        userId,
       })
-      .onConflictDoUpdate({ set, target: runpodSetting.id });
+      .onConflictDoUpdate({ set, target: runpodSetting.userId });
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }

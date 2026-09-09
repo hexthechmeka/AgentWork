@@ -22,7 +22,7 @@ export async function PATCH(request: Request, { params }: Ctx) {
   } catch {
     return Response.json({ error: "Bad request" }, { status: 400 });
   }
-  await updateFavoritePrompt(id, {
+  await updateFavoritePrompt(id, session.user.id, {
     ...(body.label === undefined ? {} : { label: body.label?.trim() || null }),
     ...(body.prompt === undefined ? {} : { prompt: body.prompt }),
     ...(body.negativePrompt === undefined
@@ -38,6 +38,6 @@ export async function DELETE(_request: Request, { params }: Ctx) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  await deleteFavoritePrompt(id);
+  await deleteFavoritePrompt(id, session.user.id);
   return Response.json({ ok: true });
 }

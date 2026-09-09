@@ -9,10 +9,11 @@ async function requireUser() {
 }
 
 export async function GET() {
-  if (!(await requireUser())) {
+  const session = await requireUser();
+  if (!session) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const row = await getRunpodSetting();
+  const row = await getRunpodSetting(session.user.id);
   return Response.json({
     hasRunpodKey: Boolean(row?.apiKey),
     podId: row?.podId ?? null,
@@ -27,7 +28,8 @@ const bodySchema = z.object({
 });
 
 export async function PUT(request: Request) {
-  if (!(await requireUser())) {
+  const session = await requireUser();
+  if (!session) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -62,8 +64,8 @@ export async function PUT(request: Request) {
     patch.apiKey = body.apiKey.trim() === "" ? null : body.apiKey.trim();
   }
 
-  await upsertRunpodSetting(patch);
-  const row = await getRunpodSetting();
+  await upsertRunpodSetting(session.user.id, patch);
+  const row = await getRunpodSetting(session.user.id);
   return Response.json({
     hasRunpodKey: Boolean(row?.apiKey),
     podId: row?.podId ?? null,

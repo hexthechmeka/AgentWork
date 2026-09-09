@@ -6,6 +6,8 @@ import {
   DicesIcon,
   ImageIcon,
   LockIcon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
   SlidersHorizontalIcon,
   SquareIcon,
   StarIcon,
@@ -22,6 +24,7 @@ import { ImagicianChat } from "@/components/imagie/generate/imagician-chat";
 import { PromptFieldsEditor } from "@/components/imagie/generate/prompt-fields";
 import { RunpodBadge } from "@/components/imagie/generate/runpod-badge";
 import { Button } from "@/components/ui/button";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -38,6 +41,7 @@ import {
 } from "@/lib/imagie/imagician";
 import {
   cancelGeneration,
+  GENERATE_CHUNK_SIZE,
   type GenerateParams,
   generateImage,
   getModels,
@@ -48,10 +52,12 @@ import {
 import {
   getDefaultModel,
   getExpertMode,
+  getFormCollapsed,
   getImagician,
   getSizePresets,
   setDefaultModel,
   setExpertMode,
+  setFormCollapsed,
   setImagician,
 } from "@/lib/imagie/local-settings";
 import { resolveRecommended } from "@/lib/imagie/model-catalog";
@@ -143,6 +149,7 @@ export function GenerateView() {
 
   const [advanced, setAdvanced] = useState<AdvancedSettings>(EMPTY_ADVANCED);
   const [imagician, setImagicianOn] = useState(false);
+  const [formCollapsed, setFormCollapsedState] = useState(false);
 
   const [favOpen, setFavOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -160,6 +167,14 @@ export function GenerateView() {
   useEffect(() => {
     setExpert(getExpertMode());
     setImagicianOn(getImagician());
+    setFormCollapsedState(getFormCollapsed());
+  }, []);
+
+  const toggleFormCollapsed = useCallback(() => {
+    setFormCollapsedState((v) => {
+      setFormCollapsed(!v);
+      return !v;
+    });
   }, []);
 
   // "이 설정으로 다시 생성" from the gallery drops values here via sessionStorage.
@@ -344,60 +359,13 @@ export function GenerateView() {
       // best-effort: make sure the chosen model is the resident one
       await loadModel(baseUrl, modelName).catch(() => undefined);
 
-      setStatusLine("생성 중…");
-      poll = setInterval(async () => {
-        try {
-          const [pr, pv] = await Promise.all([
-            getProgress(baseUrl),
-            getPreview(baseUrl),
-          ]);
-          if (pr.active) {
-            const total = pr.batch_total || 1;
-            const pct = Math.round(
-              ((pr.batch_index + pr.percent / 100) / total) * 100
-            );
-            setProgressPct(Math.min(99, Math.max(0, pct)));
-            setStatusLine(
-              `생성 중… ${pr.batch_index + 1}/${pr.batch_total} · ${pr.percent}%`
-            );
-          }
-          if (pv.image) {
-            setPreviewSrc(`data:image/jpeg;base64,${pv.image}`);
-          }
-        } catch {
-          // ignore transient poll errors
-        }
-      }, 1200);
-
-      const res = await generateImage(baseUrl, finalParams);
-      if (poll) {
-        clearInterval(poll);
-        poll = null;
+      // Split the batch into small sequential /api/generate calls — one long
+      // silent request for the whole batch trips proxy idle-timeouts.
+      const chunkSizes: number[] = [];
+      for (let left = batchCount; left > 0; left -= GENERATE_CHUNK_SIZE) {
+        chunkSizes.push(Math.min(GENERATE_CHUNK_SIZE, left));
       }
 
-      const batchId = generateUUID();
-      const made: ResultImage[] = await Promise.all(
-        res.images.map(async (b64, i) => {
-          const src = `data:image/png;base64,${b64}`;
-          const thumb = await makeThumb(src);
-          return {
-            batchId,
-            dbId: null,
-            id: generateUUID(),
-            saved: false,
-            seed: res.seeds[i] ?? null,
-            src,
-            thumb,
-          };
-        })
-      );
-      setResults((prev) => [...made, ...prev]);
-      setSelectedId(made[0]?.id ?? null);
-      setPreviewSrc(made[0]?.src ?? null);
-
-      // auto-save to "임시" — one request per image. Each base64 PNG can be
-      // several MB, and a whole batch in one body blows past Vercel's
-      // ~4.5MB request limit (that was the "saved failed" on big batches).
       const persistParams = {
         guidanceScale: finalParams.guidance_scale ?? 0,
         height,
@@ -408,52 +376,126 @@ export function GenerateView() {
         steps: finalParams.steps ?? 0,
         width,
       };
+      const batchId = generateUUID();
+      let madeTotal = 0;
       let savedCount = 0;
-      for (let i = 0; i < made.length; i += 1) {
-        const m = made[i];
-        setStatusLine(`저장 중… ${i + 1}/${made.length}`);
-        try {
-          // biome-ignore lint/performance/noAwaitInLoops: keep each request small
-          const r = await fetch(
-            `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/imagie/images`,
-            {
-              body: JSON.stringify({
-                images: [
-                  {
-                    metadata: advancedMetadata(advanced),
-                    png: m.src,
-                    seed: m.seed,
-                    thumb: m.thumb,
-                  },
-                ],
-                params: persistParams,
-              }),
-              headers: { "Content-Type": "application/json" },
-              method: "POST",
+      let cancelledEarly = false;
+
+      for (let ci = 0; ci < chunkSizes.length; ci += 1) {
+        const tag =
+          chunkSizes.length > 1 ? ` (묶음 ${ci + 1}/${chunkSizes.length})` : "";
+        setStatusLine(`생성 중…${tag}`);
+        poll = setInterval(async () => {
+          try {
+            const [pr, pv] = await Promise.all([
+              getProgress(baseUrl),
+              getPreview(baseUrl),
+            ]);
+            if (pr.active) {
+              const denom = pr.batch_total || chunkSizes[ci];
+              const frac = (pr.batch_index + pr.percent / 100) / denom;
+              const overall = Math.round(
+                ((ci + frac) / chunkSizes.length) * 100
+              );
+              setProgressPct(Math.min(99, Math.max(0, overall)));
+              setStatusLine(`생성 중…${tag} ${pr.percent}%`);
             }
-          );
-          if (!r.ok) {
-            continue;
+            if (pv.image) {
+              setPreviewSrc(`data:image/jpeg;base64,${pv.image}`);
+            }
+          } catch {
+            // ignore transient poll errors
           }
-          const body = (await r.json()) as { images: Array<{ id: string }> };
-          const dbId = body.images[0]?.id ?? null;
-          savedCount += 1;
-          setResults((prev) =>
-            prev.map((row) => (row.id === m.id ? { ...row, dbId } : row))
-          );
-        } catch {
-          // leave this one unsaved; report the shortfall below
+        }, 1200);
+
+        // biome-ignore lint/performance/noAwaitInLoops: chunks must run sequentially
+        const res = await generateImage(baseUrl, {
+          ...finalParams,
+          batch_size: chunkSizes[ci],
+        });
+        if (poll) {
+          clearInterval(poll);
+          poll = null;
+        }
+
+        const chunkMade: ResultImage[] = await Promise.all(
+          res.images.map(async (b64, i) => {
+            const src = `data:image/png;base64,${b64}`;
+            const thumb = await makeThumb(src);
+            return {
+              batchId,
+              dbId: null,
+              id: generateUUID(),
+              saved: false,
+              seed: res.seeds[i] ?? null,
+              src,
+              thumb,
+            };
+          })
+        );
+        madeTotal += chunkMade.length;
+        setResults((prev) => [...chunkMade, ...prev]);
+        if (chunkMade[0]) {
+          setSelectedId(chunkMade[0].id);
+          setPreviewSrc(chunkMade[0].src);
+        }
+
+        // persist this chunk (one request per image — a whole chunk in one
+        // body would blow past Vercel's ~4.5MB request limit)
+        for (const m of chunkMade) {
+          setStatusLine(`저장 중…${tag}`);
+          try {
+            // biome-ignore lint/performance/noAwaitInLoops: keep each request small
+            const r = await fetch(
+              `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/imagie/images`,
+              {
+                body: JSON.stringify({
+                  images: [
+                    {
+                      metadata: advancedMetadata(advanced),
+                      png: m.src,
+                      seed: m.seed,
+                      thumb: m.thumb,
+                    },
+                  ],
+                  params: persistParams,
+                }),
+                headers: { "Content-Type": "application/json" },
+                method: "POST",
+              }
+            );
+            if (!r.ok) {
+              continue;
+            }
+            const saved = (await r.json()) as { images: Array<{ id: string }> };
+            const dbId = saved.images[0]?.id ?? null;
+            savedCount += 1;
+            setResults((prev) =>
+              prev.map((row) => (row.id === m.id ? { ...row, dbId } : row))
+            );
+          } catch {
+            // leave this one unsaved; report the shortfall below
+          }
+        }
+
+        if (res.cancelled) {
+          cancelledEarly = true;
+          break;
         }
       }
+
       await mutateFolders();
-      if (savedCount === made.length) {
-        toast.success(`${made.length}장 생성 · 임시 폴더에 저장됨`);
+      const tail = cancelledEarly ? " (취소됨)" : "";
+      if (madeTotal === 0) {
+        toast.warning("생성된 이미지가 없습니다");
+      } else if (savedCount === madeTotal) {
+        toast.success(`${madeTotal}장 생성 · 임시 폴더에 저장됨${tail}`);
       } else if (savedCount > 0) {
         toast.warning(
-          `${made.length}장 생성 · ${savedCount}장만 저장됨 (나머지 저장 실패)`
+          `${madeTotal}장 생성 · ${savedCount}장만 저장됨 (나머지 저장 실패)${tail}`
         );
       } else {
-        toast.warning("생성은 됐지만 저장에 실패했습니다");
+        toast.warning(`생성은 됐지만 저장에 실패했습니다${tail}`);
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "생성 실패");
@@ -579,8 +621,9 @@ export function GenerateView() {
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
       <header className="flex items-center justify-between gap-3 border-border/50 border-b px-4 py-2.5">
-        <div className="flex items-center gap-3">
-          <h1 className="font-semibold text-[15px]">이미지 생성</h1>
+        <div className="flex min-w-0 items-center gap-2">
+          <SidebarTrigger className="-ml-1 shrink-0" />
+          <h1 className="shrink-0 font-semibold text-[15px]">이미지 생성</h1>
           <RunpodBadge bump={badgeBump} onReady={loadModelList} />
         </div>
         <div className="flex items-center gap-3">
@@ -605,234 +648,259 @@ export function GenerateView() {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
-        {/* form */}
-        <div className="w-[440px] shrink-0 overflow-y-auto border-border/50 border-r p-4">
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <span className="font-medium text-[13px]">프롬프트</span>
-              <Button
-                onClick={() => setFavOpen(true)}
-                size="sm"
-                variant="ghost"
-              >
-                <StarIcon className="size-3.5" />
-                즐겨찾기
-              </Button>
-            </div>
-            {imagician ? <ImagicianChat onApply={applyImagician} /> : null}
-            <PromptFieldsEditor onChange={setFields} value={fields} />
+      <div className="flex min-h-0 min-w-0 flex-1">
+        {/* form panel — collapsible (Part 3B) */}
+        {formCollapsed ? (
+          <div className="flex w-9 shrink-0 flex-col items-center border-border/50 border-r pt-2">
+            <Button
+              className="size-7"
+              onClick={toggleFormCollapsed}
+              size="icon"
+              title="입력 패널 펼치기"
+              variant="ghost"
+            >
+              <PanelLeftOpenIcon className="size-4" />
+            </Button>
+          </div>
+        ) : (
+          <div className="w-[440px] shrink-0 overflow-y-auto border-border/50 border-r p-4">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1 font-medium text-[13px]">
+                  <Button
+                    className="size-6"
+                    onClick={toggleFormCollapsed}
+                    size="icon"
+                    title="입력 패널 접기"
+                    variant="ghost"
+                  >
+                    <PanelLeftCloseIcon className="size-4" />
+                  </Button>
+                  프롬프트
+                </span>
+                <Button
+                  onClick={() => setFavOpen(true)}
+                  size="sm"
+                  variant="ghost"
+                >
+                  <StarIcon className="size-3.5" />
+                  즐겨찾기
+                </Button>
+              </div>
+              {imagician ? <ImagicianChat onApply={applyImagician} /> : null}
+              <PromptFieldsEditor onChange={setFields} value={fields} />
 
-            <div className="flex flex-col gap-1.5">
-              <span className="font-medium text-[12px] text-muted-foreground">
-                네거티브
-              </span>
-              <Textarea
-                className="min-h-16 text-[12px]"
-                onChange={(e) => setNegative(e.target.value)}
-                value={negative}
-              />
-            </div>
+              <div className="flex flex-col gap-1.5">
+                <span className="font-medium text-[12px] text-muted-foreground">
+                  네거티브
+                </span>
+                <Textarea
+                  className="min-h-16 text-[12px]"
+                  onChange={(e) => setNegative(e.target.value)}
+                  value={negative}
+                />
+              </div>
 
-            <label className="flex flex-col gap-1.5">
-              <span className="font-medium text-[12px] text-muted-foreground">
-                모델
-              </span>
-              <select
-                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-[13px] outline-none focus:border-foreground/40"
-                onChange={(e) => setModelName(e.target.value)}
-                value={modelName}
-              >
-                {models.length === 0 ? (
-                  <option value="">(Pod 켜면 목록 로드)</option>
-                ) : null}
-                {models.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                {samplingLocked ? (
-                  <>
-                    <LockIcon className="size-3" />
-                    모델 고정 (Euler / v-pred)
-                  </>
-                ) : expert ? (
-                  `전문가 값: ${expertSettings.sampler} · ${expertSettings.steps} steps · CFG ${expertSettings.cfg}`
-                ) : (
-                  `자동: ${recommended.sampler} · ${recommended.steps} steps · CFG ${recommended.cfg}`
-                )}
-              </span>
-            </label>
-
-            <div className="grid grid-cols-2 gap-3">
               <label className="flex flex-col gap-1.5">
                 <span className="font-medium text-[12px] text-muted-foreground">
-                  크기
+                  모델
                 </span>
                 <select
-                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-[13px] outline-none focus:border-foreground/40 disabled:opacity-50"
-                  disabled={expert}
-                  onChange={(e) => setSizePresetId(e.target.value)}
-                  value={sizePresetId}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-[13px] outline-none focus:border-foreground/40"
+                  onChange={(e) => setModelName(e.target.value)}
+                  value={modelName}
                 >
-                  {presets.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.label}
+                  {models.length === 0 ? (
+                    <option value="">(Pod 켜면 목록 로드)</option>
+                  ) : null}
+                  {models.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
                     </option>
                   ))}
                 </select>
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="font-medium text-[12px] text-muted-foreground">
-                  배치 ({batchCount})
-                </span>
-                <input
-                  max={20}
-                  min={1}
-                  onChange={(e) => setBatchCount(Number(e.target.value))}
-                  type="range"
-                  value={batchCount}
-                />
-              </label>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                <input
-                  checked={seedMode === "fixed"}
-                  onChange={(e) =>
-                    setSeedMode(e.target.checked ? "fixed" : "random")
-                  }
-                  type="checkbox"
-                />
-                시드 고정
-              </label>
-              {seedMode === "fixed" ? (
-                <input
-                  className="w-32 rounded-lg border border-border bg-card px-2 py-1 text-[13px]"
-                  onChange={(e) => setSeedText(e.target.value)}
-                  type="number"
-                  value={seedText}
-                />
-              ) : (
-                <span className="flex items-center gap-1 text-[12px] text-muted-foreground">
-                  <DicesIcon className="size-3.5" />
-                  매번 랜덤
-                </span>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-2 rounded-lg border border-border/60 px-3 py-2">
-              <span className="flex items-center justify-between text-[12px] text-muted-foreground">
-                img2img
-                <Switch
-                  checked={advanced.img2imgEnabled}
-                  onCheckedChange={(v) =>
-                    setAdvanced((a) => ({ ...a, img2imgEnabled: v }))
-                  }
-                />
-              </span>
-              {advanced.img2imgEnabled ? (
-                <>
-                  {advanced.initImage ? (
-                    <div className="flex items-center gap-2">
-                      {/* biome-ignore lint/performance/noImgElement: local data URL preview */}
-                      <img
-                        alt=""
-                        className="size-14 rounded-md object-cover"
-                        src={advanced.initImage}
-                      />
-                      <Button
-                        onClick={() =>
-                          setAdvanced((a) => ({ ...a, initImage: null }))
-                        }
-                        size="sm"
-                        type="button"
-                        variant="ghost"
-                      >
-                        제거
-                      </Button>
-                    </div>
+                <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  {samplingLocked ? (
+                    <>
+                      <LockIcon className="size-3" />
+                      모델 고정 (Euler / v-pred)
+                    </>
+                  ) : expert ? (
+                    `전문가 값: ${expertSettings.sampler} · ${expertSettings.steps} steps · CFG ${expertSettings.cfg}`
                   ) : (
-                    <label className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-[12px]">
-                      초안 이미지 업로드
-                      <input
-                        accept="image/png,image/jpeg"
-                        className="hidden"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) {
-                            return;
-                          }
-                          try {
-                            const url = await fileToDataUrl(file);
-                            setAdvanced((a) => ({ ...a, initImage: url }));
-                          } catch {
-                            toast.error("이미지 읽기 실패");
-                          }
-                        }}
-                        type="file"
-                      />
-                    </label>
+                    `자동: ${recommended.sampler} · ${recommended.steps} steps · CFG ${recommended.cfg}`
                   )}
-                  <span className="text-[11px] text-muted-foreground">
-                    변형 강도 {advanced.denoiseStrength.toFixed(2)} (1 = 새로
-                    생성에 가까움)
+                </span>
+              </label>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex flex-col gap-1.5">
+                  <span className="font-medium text-[12px] text-muted-foreground">
+                    크기
+                  </span>
+                  <select
+                    className="w-full rounded-lg border border-border bg-card px-3 py-2 text-[13px] outline-none focus:border-foreground/40 disabled:opacity-50"
+                    disabled={expert}
+                    onChange={(e) => setSizePresetId(e.target.value)}
+                    value={sizePresetId}
+                  >
+                    {presets.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="font-medium text-[12px] text-muted-foreground">
+                    배치 ({batchCount})
                   </span>
                   <input
-                    max={0.95}
-                    min={0.1}
-                    onChange={(e) =>
-                      setAdvanced((a) => ({
-                        ...a,
-                        denoiseStrength: Number(e.target.value),
-                      }))
-                    }
-                    step={0.05}
+                    max={100}
+                    min={1}
+                    onChange={(e) => setBatchCount(Number(e.target.value))}
                     type="range"
-                    value={advanced.denoiseStrength}
+                    value={batchCount}
                   />
-                </>
-              ) : null}
-            </div>
+                </label>
+              </div>
 
-            <div className="flex gap-2">
-              <Button
-                className="h-11 flex-1 text-[14px]"
-                disabled={generating}
-                onClick={runGenerate}
-              >
-                {generating ? (
-                  <>
-                    <Spinner />
-                    {statusLine ?? "생성 중…"}
-                  </>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                  <input
+                    checked={seedMode === "fixed"}
+                    onChange={(e) =>
+                      setSeedMode(e.target.checked ? "fixed" : "random")
+                    }
+                    type="checkbox"
+                  />
+                  시드 고정
+                </label>
+                {seedMode === "fixed" ? (
+                  <input
+                    className="w-32 rounded-lg border border-border bg-card px-2 py-1 text-[13px]"
+                    onChange={(e) => setSeedText(e.target.value)}
+                    type="number"
+                    value={seedText}
+                  />
                 ) : (
-                  <>
-                    <ImageIcon className="size-4" />
-                    생성
-                  </>
+                  <span className="flex items-center gap-1 text-[12px] text-muted-foreground">
+                    <DicesIcon className="size-3.5" />
+                    매번 랜덤
+                  </span>
                 )}
-              </Button>
-              {generating ? (
+              </div>
+
+              <div className="flex flex-col gap-2 rounded-lg border border-border/60 px-3 py-2">
+                <span className="flex items-center justify-between text-[12px] text-muted-foreground">
+                  img2img
+                  <Switch
+                    checked={advanced.img2imgEnabled}
+                    onCheckedChange={(v) =>
+                      setAdvanced((a) => ({ ...a, img2imgEnabled: v }))
+                    }
+                  />
+                </span>
+                {advanced.img2imgEnabled ? (
+                  <>
+                    {advanced.initImage ? (
+                      <div className="flex items-center gap-2">
+                        {/* biome-ignore lint/performance/noImgElement: local data URL preview */}
+                        <img
+                          alt=""
+                          className="size-14 rounded-md object-cover"
+                          src={advanced.initImage}
+                        />
+                        <Button
+                          onClick={() =>
+                            setAdvanced((a) => ({ ...a, initImage: null }))
+                          }
+                          size="sm"
+                          type="button"
+                          variant="ghost"
+                        >
+                          제거
+                        </Button>
+                      </div>
+                    ) : (
+                      <label className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-[12px]">
+                        초안 이미지 업로드
+                        <input
+                          accept="image/png,image/jpeg"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) {
+                              return;
+                            }
+                            try {
+                              const url = await fileToDataUrl(file);
+                              setAdvanced((a) => ({ ...a, initImage: url }));
+                            } catch {
+                              toast.error("이미지 읽기 실패");
+                            }
+                          }}
+                          type="file"
+                        />
+                      </label>
+                    )}
+                    <span className="text-[11px] text-muted-foreground">
+                      변형 강도 {advanced.denoiseStrength.toFixed(2)} (1 = 새로
+                      생성에 가까움)
+                    </span>
+                    <input
+                      max={0.95}
+                      min={0.1}
+                      onChange={(e) =>
+                        setAdvanced((a) => ({
+                          ...a,
+                          denoiseStrength: Number(e.target.value),
+                        }))
+                      }
+                      step={0.05}
+                      type="range"
+                      value={advanced.denoiseStrength}
+                    />
+                  </>
+                ) : null}
+              </div>
+
+              <div className="flex gap-2">
                 <Button
-                  className="h-11"
-                  disabled={cancelling}
-                  onClick={cancelRun}
-                  variant="outline"
+                  className="h-11 flex-1 text-[14px]"
+                  disabled={generating}
+                  onClick={runGenerate}
                 >
-                  <SquareIcon className="size-4" />
-                  {cancelling ? "취소 중…" : "취소"}
+                  {generating ? (
+                    <>
+                      <Spinner />
+                      {statusLine ?? "생성 중…"}
+                    </>
+                  ) : (
+                    <>
+                      <ImageIcon className="size-4" />
+                      생성
+                    </>
+                  )}
                 </Button>
-              ) : null}
+                {generating ? (
+                  <Button
+                    className="h-11"
+                    disabled={cancelling}
+                    onClick={cancelRun}
+                    variant="outline"
+                  >
+                    <SquareIcon className="size-4" />
+                    {cancelling ? "취소 중…" : "취소"}
+                  </Button>
+                ) : null}
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* preview + session strip */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {/* dedicated progress bar (spec: not overlaid on the image) */}
           {generating ? (
             <div className="flex flex-col gap-1 border-border/50 border-b px-4 py-2">
@@ -849,12 +917,12 @@ export function GenerateView() {
             </div>
           ) : null}
 
-          <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-muted/30 p-4">
+          <div className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden bg-muted/30 p-4">
             {previewSrc ? (
               // biome-ignore lint/performance/noImgElement: data URL preview
               <img
                 alt=""
-                className="max-h-full max-w-full rounded-lg object-contain shadow-lg"
+                className="h-auto max-h-full w-auto max-w-full rounded-lg object-contain shadow-lg"
                 src={previewSrc}
               />
             ) : (
@@ -893,7 +961,7 @@ export function GenerateView() {
           </div>
 
           <div className="border-border/50 border-t p-3">
-            <div className="mb-2 flex items-center gap-2">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
               <select
                 className="rounded-lg border border-border bg-card px-2 py-1.5 text-[12px]"
                 onChange={(e) => setSaveFolderId(e.target.value)}

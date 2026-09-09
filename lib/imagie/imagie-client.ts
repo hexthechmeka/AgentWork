@@ -9,6 +9,13 @@
 
 const REQUEST_TIMEOUT_MS = 5 * 60 * 1000; // 5 min — first real model load is slow
 
+// `/api/generate` holds the whole HTTP request open with no bytes flowing
+// until the entire batch is done, so a big batch trips proxy idle-timeouts
+// (~20+ images failed in practice). The client splits large batches into
+// this many images per call and runs them sequentially. Conservative — tune
+// here once the real threshold is measured.
+export const GENERATE_CHUNK_SIZE = 6;
+
 export type ImagieModelInfo = {
   name: string;
   type: string;

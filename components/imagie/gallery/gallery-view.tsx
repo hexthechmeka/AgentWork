@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { fetcher } from "@/lib/utils";
 
 // Show the auto-managed "임시" folder as a card (spec §11 — TODO: make this a
@@ -101,7 +102,10 @@ export function GalleryView() {
   return (
     <div className="h-dvh overflow-y-auto bg-background">
       <div className="mx-auto max-w-5xl px-6 py-8">
-        <h1 className="mb-5 font-semibold text-foreground text-xl">갤러리</h1>
+        <h1 className="mb-5 flex items-center gap-2 font-semibold text-foreground text-xl">
+          <SidebarTrigger className="-ml-1" />
+          갤러리
+        </h1>
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
           {folders.map((f) => (

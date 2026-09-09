@@ -8,7 +8,7 @@ export async function POST() {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const row = await getRunpodSetting();
+  const row = await getRunpodSetting(session.user.id);
   if (!(row?.podId && row.apiKey)) {
     return Response.json(
       { error: "Pod ID와 RunPod API 키를 먼저 설정하세요" },

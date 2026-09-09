@@ -35,21 +35,23 @@ export async function POST(request: Request) {
     return Response.json({ error: "Bad request" }, { status: 400 });
   }
 
+  const userId = session.user.id;
+
   if (body.op === "move") {
-    const target = await getFolderById(body.folderId);
+    const target = await getFolderById(body.folderId, userId);
     if (!target) {
       return Response.json({ error: "Folder not found" }, { status: 404 });
     }
-    await bulkMoveImages(body.ids, body.folderId);
+    await bulkMoveImages(body.ids, userId, body.folderId);
     return Response.json({ moved: body.ids.length, ok: true });
   }
 
   // delete: blobs first, then rows
-  const rows = await getImagesByIds(body.ids);
+  const rows = await getImagesByIds(body.ids, userId);
   const storage = getMediaStorage();
   await Promise.all(
     rows.flatMap((r) => [storage.delete(r.blobUrl), storage.delete(r.thumbUrl)])
   );
-  await deleteImageRows(body.ids);
+  await deleteImageRows(body.ids, userId);
   return Response.json({ deleted: rows.length, ok: true });
 }

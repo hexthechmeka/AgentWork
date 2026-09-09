@@ -12,7 +12,7 @@ export async function PATCH(request: Request, { params }: Ctx) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  const folder = await getFolderById(id);
+  const folder = await getFolderById(id, session.user.id);
   if (!folder) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
@@ -28,7 +28,7 @@ export async function PATCH(request: Request, { params }: Ctx) {
   } catch {
     return Response.json({ error: "Bad request" }, { status: 400 });
   }
-  await renameFolder(id, body.name.trim());
+  await renameFolder(id, session.user.id, body.name.trim());
   return Response.json({ ok: true });
 }
 
@@ -38,7 +38,7 @@ export async function DELETE(_request: Request, { params }: Ctx) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  const folder = await getFolderById(id);
+  const folder = await getFolderById(id, session.user.id);
   if (!folder) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
@@ -48,6 +48,6 @@ export async function DELETE(_request: Request, { params }: Ctx) {
       { status: 403 }
     );
   }
-  await deleteFolder(id);
+  await deleteFolder(id, session.user.id);
   return Response.json({ ok: true });
 }

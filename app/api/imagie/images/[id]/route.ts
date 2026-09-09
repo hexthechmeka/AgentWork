@@ -19,7 +19,8 @@ export async function PATCH(request: Request, { params }: Ctx) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  const image = await getImageById(id);
+  const userId = session.user.id;
+  const image = await getImageById(id, userId);
   if (!image) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
@@ -29,11 +30,11 @@ export async function PATCH(request: Request, { params }: Ctx) {
   } catch {
     return Response.json({ error: "Bad request" }, { status: 400 });
   }
-  const target = await getFolderById(body.folderId);
+  const target = await getFolderById(body.folderId, userId);
   if (!target) {
     return Response.json({ error: "Folder not found" }, { status: 404 });
   }
-  await moveImageToFolder(id, body.folderId);
+  await moveImageToFolder(id, userId, body.folderId);
   return Response.json({ ok: true });
 }
 
@@ -43,7 +44,8 @@ export async function DELETE(_request: Request, { params }: Ctx) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  const image = await getImageById(id);
+  const userId = session.user.id;
+  const image = await getImageById(id, userId);
   if (!image) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
@@ -52,6 +54,6 @@ export async function DELETE(_request: Request, { params }: Ctx) {
     storage.delete(image.blobUrl),
     storage.delete(image.thumbUrl),
   ]);
-  await deleteImageRows([id]);
+  await deleteImageRows([id], userId);
   return Response.json({ ok: true });
 }

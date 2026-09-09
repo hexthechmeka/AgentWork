@@ -258,17 +258,21 @@ export const setting = pgTable("Setting", {
 export type Setting = InferSelectModel<typeof setting>;
 
 // ─── Imagie (image generation) ────────────────────────────────────────────
-// Single-user feature — these tables have no owner column, only auth gates
-// the routes. The Imagie backend (RunPod FastAPI) is never touched; we only
-// store the generated images (blob) + their metadata here.
+// Per-account: every table is scoped by `userId` (same as Chat/Message), so
+// the gallery / folders / favorites / RunPod config are isolated per login.
+// The Imagie backend (RunPod FastAPI) is never touched; we only store the
+// generated images (blob) + their metadata here.
 
 // A gallery folder. `isSystem` folders ("미분류" = unfiled, "임시" = temp)
-// can't be renamed or deleted.
+// exist once per account and can't be renamed or deleted.
 export const folder = pgTable("Folder", {
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   id: uuid("id").primaryKey().notNull().defaultRandom(),
   isSystem: boolean("isSystem").notNull().default(false),
   name: text("name").notNull(),
+  userId: uuid("userId")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
 });
 
 export type Folder = InferSelectModel<typeof folder>;
@@ -295,6 +299,9 @@ export const imagieImage = pgTable("ImagieImage", {
   seed: bigint("seed", { mode: "number" }),
   steps: integer("steps").notNull(),
   thumbUrl: text("thumbUrl").notNull(),
+  userId: uuid("userId")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
   width: integer("width").notNull(),
 });
 
@@ -307,17 +314,23 @@ export const favoritePrompt = pgTable("FavoritePrompt", {
   label: text("label"),
   negativePrompt: text("negativePrompt").notNull().default(""),
   prompt: text("prompt").notNull(),
+  userId: uuid("userId")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
 });
 
 export type FavoritePrompt = InferSelectModel<typeof favoritePrompt>;
 
-// Single-row table (id is forced to 1) holding RunPod pod control config.
-// `apiKey` is stored server-side only and never returned to the browser.
+// One row per account holding RunPod pod control config. `apiKey` is stored
+// server-side only and never returned to the browser.
 export const runpodSetting = pgTable("RunpodSetting", {
   apiKey: text("apiKey"),
-  id: integer("id").primaryKey().notNull().default(1),
   podId: text("podId"),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  userId: uuid("userId")
+    .primaryKey()
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
 });
 
 export type RunpodSetting = InferSelectModel<typeof runpodSetting>;

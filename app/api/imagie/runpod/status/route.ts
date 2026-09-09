@@ -15,7 +15,7 @@ export async function GET() {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const row = await getRunpodSetting();
+  const row = await getRunpodSetting(session.user.id);
   const podId = row?.podId ?? null;
   if (!podId) {
     return Response.json({

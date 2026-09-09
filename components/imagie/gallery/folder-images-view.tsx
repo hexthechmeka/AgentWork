@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import type { ImagieImage } from "@/lib/db/schema";
 import {
   type GallerySort,
@@ -342,6 +343,7 @@ export function FolderImagesView({ folderId }: { folderId: string }) {
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
       {/* header */}
       <div className="flex items-center gap-2 border-border/50 border-b px-6 py-3">
+        <SidebarTrigger className="-ml-1" />
         <Link className="rounded-md p-1 hover:bg-muted" href="/imagie/gallery">
           <ArrowLeftIcon className="size-4" />
         </Link>

@@ -1,14 +1,16 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { Toaster } from "sonner";
 import { auth } from "@/app/(auth)/auth";
 import { AppShellSkeleton } from "@/components/chat/app-shell-skeleton";
 import { ImagieSidebar } from "@/components/imagie/imagie-sidebar";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { ImagieSidebarProvider } from "@/components/imagie/imagie-sidebar-provider";
+import { SidebarInset } from "@/components/ui/sidebar";
 
-// Imagie runs in its own shell — a slim sidebar with 생성 / 갤러리 / 설정.
-// The main app sidebar (projects / chats) is not mounted here.
+// Imagie runs in its own shell — a slim nav sidebar with 생성 / 갤러리 / 설정
+// that collapses independently of the main chat sidebar (own localStorage
+// key, not the shared `sidebar_state` cookie). The main app sidebar is not
+// mounted here.
 export default function ImagieLayout({
   children,
 }: {
@@ -26,16 +28,11 @@ async function ImagieShell({ children }: { children: React.ReactNode }) {
   if (!session?.user) {
     redirect("/login");
   }
-  const cookieStore = await cookies();
-  const isCollapsed = cookieStore.get("sidebar_state")?.value !== "true";
 
   return (
-    <SidebarProvider
-      defaultOpen={!isCollapsed}
-      style={{ "--sidebar-width": "16rem" } as React.CSSProperties}
-    >
+    <ImagieSidebarProvider>
       <ImagieSidebar />
-      <SidebarInset>
+      <SidebarInset className="min-w-0 overflow-x-hidden">
         <Toaster
           position="top-center"
           theme="system"
@@ -46,6 +43,6 @@ async function ImagieShell({ children }: { children: React.ReactNode }) {
         />
         {children}
       </SidebarInset>
-    </SidebarProvider>
+    </ImagieSidebarProvider>
   );
 }

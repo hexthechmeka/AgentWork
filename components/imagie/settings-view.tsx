@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import {
   getSizePresets,
   setSizePresets as persistPresets,
@@ -19,7 +20,10 @@ export function SettingsView() {
   return (
     <div className="h-dvh overflow-y-auto bg-background">
       <div className="mx-auto flex max-w-2xl flex-col gap-8 px-6 py-8">
-        <h1 className="font-semibold text-foreground text-xl">Imagie 설정</h1>
+        <h1 className="flex items-center gap-2 font-semibold text-foreground text-xl">
+          <SidebarTrigger className="-ml-1" />
+          Imagie 설정
+        </h1>
         <ServerSection />
         <PresetsSection />
       </div>

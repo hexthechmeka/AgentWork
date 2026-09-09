@@ -7,7 +7,7 @@ export async function GET() {
   if (!session?.user) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const favorites = await listFavoritePrompts();
+  const favorites = await listFavoritePrompts(session.user.id);
   return Response.json({ favorites });
 }
 
@@ -32,6 +32,7 @@ export async function POST(request: Request) {
     label: body.label?.trim() || null,
     negativePrompt: body.negativePrompt,
     prompt: body.prompt,
+    userId: session.user.id,
   });
   return Response.json({ favorite }, { status: 201 });
 }

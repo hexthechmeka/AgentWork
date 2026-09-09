@@ -7,7 +7,9 @@ import { DEFAULT_SIZE_PRESETS, type SizePreset } from "./size-presets";
 const KEYS = {
   defaultModel: "imagie.defaultModel",
   expertMode: "imagie.expertMode",
+  formCollapsed: "imagie.formCollapsed",
   imagician: "imagie.imagician",
+  navOpen: "imagie.navOpen",
   negative: "imagie.defaultNegative",
   sizePresets: "imagie.sizePresets",
 } as const;
@@ -75,4 +77,23 @@ export function getStoredNegative(fallback: string): string {
 
 export function setStoredNegative(value: string): void {
   write(KEYS.negative, value);
+}
+
+// /imagie left-nav sidebar — its own key so it doesn't leak into the chat
+// sidebar's `sidebar_state` cookie. Default collapsed.
+export function getNavOpen(): boolean {
+  return read(KEYS.navOpen) === "1";
+}
+
+export function setNavOpen(open: boolean): void {
+  write(KEYS.navOpen, open ? "1" : "0");
+}
+
+// Generate screen's 440px input panel. Default expanded.
+export function getFormCollapsed(): boolean {
+  return read(KEYS.formCollapsed) === "1";
+}
+
+export function setFormCollapsed(collapsed: boolean): void {
+  write(KEYS.formCollapsed, collapsed ? "1" : "0");
 }
