@@ -33,6 +33,7 @@ export default async function ProjectPage({
       chats={project.chats}
       projectId={project.id}
       projectName={project.name}
+      repoUrl={project.repoUrl}
     />
   );
 }

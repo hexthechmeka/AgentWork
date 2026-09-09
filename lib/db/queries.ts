@@ -217,6 +217,27 @@ export async function getProjectById({ id }: { id: string }) {
   }
 }
 
+export async function updateProjectRepoUrl({
+  id,
+  userId,
+  repoUrl,
+}: {
+  id: string;
+  userId: string;
+  repoUrl: string | null;
+}) {
+  try {
+    const [updated] = await db
+      .update(project)
+      .set({ repoUrl })
+      .where(and(eq(project.id, id), eq(project.userId, userId)))
+      .returning();
+    return updated ?? null;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
 export async function getProjectWithChatsById({
   id,
   userId,

@@ -10,6 +10,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
@@ -74,15 +75,20 @@ export function DevConsole({
   open,
   onClose,
   initialInstruction = "",
+  initialRepoUrl = null,
 }: {
   projectId: string;
   open: boolean;
   onClose: () => void;
   initialInstruction?: string;
+  initialRepoUrl?: string | null;
 }) {
   const [status, setStatus] = useState<Status>("idle");
   const [events, setEvents] = useState<DevEvent[]>([]);
   const [instruction, setInstruction] = useState(initialInstruction);
+  const [repo, setRepo] = useState(initialRepoUrl ?? "");
+  const [savingRepo, setSavingRepo] = useState(false);
+  const savedRepoRef = useRef(initialRepoUrl ?? "");
   const esRef = useRef<EventSource | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -150,15 +156,60 @@ export function DevConsole({
     []
   );
 
+  const onRepoChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setRepo(e.target.value);
+  }, []);
+
+  const saveRepo = useCallback(
+    async (raw: string) => {
+      const next = raw.trim();
+      if (next === savedRepoRef.current.trim()) {
+        return;
+      }
+      setSavingRepo(true);
+      try {
+        const res = await fetch(`${BASE}/api/projects/${projectId}`, {
+          body: JSON.stringify({ repoUrl: next }),
+          headers: { "Content-Type": "application/json" },
+          method: "PATCH",
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(body.message ?? body.error ?? "저장 실패");
+        }
+        const saved: string = body.repoUrl ?? "";
+        savedRepoRef.current = saved;
+        setRepo(saved);
+        toast.success(saved ? "대상 저장소 저장됨" : "대상 저장소 해제됨");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "대상 저장소 저장 실패");
+      } finally {
+        setSavingRepo(false);
+      }
+    },
+    [projectId]
+  );
+
+  const onRepoBlur = useCallback(
+    async (e: React.FocusEvent<HTMLInputElement>) => {
+      await saveRepo(e.currentTarget.value);
+    },
+    [saveRepo]
+  );
+
   const start = useCallback(async () => {
-    if (!instruction.trim() || status === "running") {
+    if (!(instruction.trim() && repo.trim()) || status === "running") {
       return;
     }
     setEvents([]);
     setStatus("running");
     try {
       const res = await fetch(`${BASE}/api/dev/start`, {
-        body: JSON.stringify({ instruction: instruction.trim(), projectId }),
+        body: JSON.stringify({
+          instruction: instruction.trim(),
+          projectId,
+          repoUrl: repo.trim(),
+        }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -183,7 +234,7 @@ export function DevConsole({
       ]);
       toast.error(e instanceof Error ? e.message : "개발 시작 실패");
     }
-  }, [instruction, status, projectId, subscribe]);
+  }, [instruction, repo, status, projectId, subscribe]);
 
   if (!open) {
     return null;
@@ -211,6 +262,23 @@ export function DevConsole({
         >
           <XIcon className="size-4" />
         </button>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2 border-border/40 border-b px-3 py-1.5">
+        <span className="shrink-0 text-[12px] text-muted-foreground">
+          대상 저장소
+        </span>
+        <Input
+          className="h-7 flex-1 font-mono text-[12px]"
+          disabled={status === "running" || savingRepo}
+          onBlur={onRepoBlur}
+          onChange={onRepoChange}
+          placeholder="https://github.com/<owner>/<repo>"
+          value={repo}
+        />
+        {savingRepo ? (
+          <Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />
+        ) : null}
       </div>
 
       <div
@@ -247,8 +315,9 @@ export function DevConsole({
         />
         <Button
           className={cn(status === "running" && "opacity-60")}
-          disabled={status === "running" || !instruction.trim()}
+          disabled={status === "running" || !instruction.trim() || !repo.trim()}
           onClick={start}
+          title={repo.trim() ? undefined : "대상 저장소를 먼저 입력하세요"}
         >
           {status === "running" ? "실행 중…" : "개발 시작"}
         </Button>

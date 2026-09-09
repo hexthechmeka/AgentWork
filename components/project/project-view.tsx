@@ -110,10 +110,12 @@ export function ProjectView({
   projectId,
   projectName,
   chats,
+  repoUrl,
 }: {
   projectId: string;
   projectName: string;
   chats: Chat[];
+  repoUrl: string | null;
 }) {
   const searchParams = useSearchParams();
   const chatParam = searchParams.get("chat");
@@ -380,6 +382,7 @@ export function ProjectView({
         />
         <DevConsole
           initialInstruction={docContent === PLACEHOLDER_DOC ? "" : docContent}
+          initialRepoUrl={repoUrl}
           onClose={closeDevConsole}
           open={isDevConsoleOpen}
           projectId={projectId}
@@ -392,6 +395,7 @@ export function ProjectView({
     <div className="flex h-dvh w-full flex-col">
       <DevConsole
         initialInstruction={docContent === PLACEHOLDER_DOC ? "" : docContent}
+        initialRepoUrl={repoUrl}
         onClose={closeDevConsole}
         open={isDevConsoleOpen}
         projectId={projectId}

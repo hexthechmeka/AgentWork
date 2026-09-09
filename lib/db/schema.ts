@@ -32,6 +32,9 @@ export const project = pgTable("Project", {
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   id: uuid("id").primaryKey().notNull().defaultRandom(),
   name: text("name").notNull(),
+  // Target repo the dev-agent (Vultr) clones + commits into for this project.
+  // Null → "개발 시작" is disabled. AgentWork's own repo is never the target.
+  repoUrl: text("repoUrl"),
   userId: uuid("userId")
     .notNull()
     .references(() => user.id),

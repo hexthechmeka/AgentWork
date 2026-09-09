@@ -6,6 +6,8 @@ import { VultrUnconfiguredError, vultrFetch } from "@/lib/dev/vultr";
 const bodySchema = z.object({
   instruction: z.string().min(1).max(20_000),
   projectId: z.string().uuid(),
+  // optional per-run override; normally the project's saved repoUrl is used
+  repoUrl: z.string().url().optional(),
 });
 
 // Browser -> Vercel -> Vultr. Kicks off a dev-agent job and hands back the
@@ -28,11 +30,20 @@ export async function POST(request: Request) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
 
+  const repoUrl = body.repoUrl ?? project.repoUrl ?? null;
+  if (!repoUrl) {
+    return Response.json(
+      { error: "이 프로젝트에 대상 저장소가 설정되지 않았습니다" },
+      { status: 400 }
+    );
+  }
+
   try {
     const res = await vultrFetch("/run", {
       body: JSON.stringify({
         instruction: body.instruction,
         projectId: body.projectId,
+        repoUrl,
       }),
       method: "POST",
     });
