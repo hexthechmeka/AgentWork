@@ -7,8 +7,6 @@ import {
   Trash2Icon,
   XIcon,
 } from "lucide-react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -25,8 +23,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import type { ImagieImage } from "@/lib/db/schema";
+import { openGallery, requestPrefill } from "@/lib/imagie/gallery-overlay";
 import {
   type GallerySort,
   getGallerySort,
@@ -43,7 +41,6 @@ type Resp = { images: ImagieImage[] };
 type FolderRow = { id: string; name: string };
 
 export function FolderImagesView({ folderId }: { folderId: string }) {
-  const router = useRouter();
   const { data, mutate } = useSWR<Resp>(
     `${BASE}/images?folderId=${folderId}`,
     fetcher
@@ -282,25 +279,14 @@ export function FolderImagesView({ folderId }: { folderId: string }) {
     }
   }, [confirmDelete, selected, clearSel, mutate]);
 
-  const reuse = useCallback(
-    (img: ImagieImage) => {
-      try {
-        sessionStorage.setItem(
-          "imagie.prefill",
-          JSON.stringify({
-            modelName: img.modelName,
-            negativePrompt: img.negativePrompt,
-            prompt: img.prompt,
-          })
-        );
-      } catch {
-        // best-effort
-      }
-      toast.success("생성 화면에 프리필했습니다");
-      router.push("/imagie");
-    },
-    [router]
-  );
+  const reuse = useCallback((img: ImagieImage) => {
+    requestPrefill({
+      modelName: img.modelName,
+      negativePrompt: img.negativePrompt,
+      prompt: img.prompt,
+    });
+    toast.success("생성 화면에 프리필했습니다");
+  }, []);
 
   // ── detail navigation ─────────────────────────────────────────────────
   const detailIdx = visible.findIndex((v) => v.id === detailId);
@@ -343,10 +329,13 @@ export function FolderImagesView({ folderId }: { folderId: string }) {
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
       {/* header */}
       <div className="flex items-center gap-2 border-border/50 border-b px-6 py-3">
-        <SidebarTrigger className="-ml-1" />
-        <Link className="rounded-md p-1 hover:bg-muted" href="/imagie/gallery">
+        <button
+          className="rounded-md p-1 hover:bg-muted"
+          onClick={() => openGallery(null)}
+          type="button"
+        >
           <ArrowLeftIcon className="size-4" />
-        </Link>
+        </button>
         <h1 className="font-semibold text-foreground text-lg">{folderName}</h1>
         <span className="text-[13px] text-muted-foreground">
           {visible.length}
@@ -397,7 +386,7 @@ export function FolderImagesView({ folderId }: { folderId: string }) {
               key={f.id}
               onClick={() => {
                 if (!isCurrent) {
-                  router.push(`/imagie/gallery/${f.id}`);
+                  openGallery(f.id);
                 }
               }}
               onDragOver={(e) => {

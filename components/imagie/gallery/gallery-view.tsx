@@ -1,7 +1,6 @@
 "use client";
 
 import { FolderPlusIcon, MoreVerticalIcon } from "lucide-react";
-import Link from "next/link";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -24,6 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { openGallery } from "@/lib/imagie/gallery-overlay";
 import { fetcher } from "@/lib/utils";
 
 // Show the auto-managed "임시" folder as a card (spec §11 — TODO: make this a
@@ -110,9 +110,10 @@ export function GalleryView() {
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
           {folders.map((f) => (
             <div className="group relative" key={f.id}>
-              <Link
-                className="block overflow-hidden rounded-xl border border-border/60 transition-colors hover:border-foreground/30"
-                href={`/imagie/gallery/${f.id}`}
+              <button
+                className="block w-full overflow-hidden rounded-xl border border-border/60 text-left transition-colors hover:border-foreground/30"
+                onClick={() => openGallery(f.id)}
+                type="button"
               >
                 <div className="aspect-square bg-muted/40">
                   {f.coverThumbUrl ? (
@@ -132,7 +133,7 @@ export function GalleryView() {
                     {f.imageCount}
                   </span>
                 </div>
-              </Link>
+              </button>
               {f.name === "임시" ? (
                 <span className="absolute top-2 left-2 rounded bg-amber-500/90 px-1.5 py-0.5 text-[10px] font-medium text-white">
                   임시 · 7일

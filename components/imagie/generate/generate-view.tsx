@@ -36,6 +36,11 @@ import {
   fileToDataUrl,
 } from "@/lib/imagie/advanced";
 import {
+  consumePrefill,
+  openGallery,
+  useGalleryOverlay,
+} from "@/lib/imagie/gallery-overlay";
+import {
   IMAGICIAN_MODEL_MAP,
   type ImagicianResult,
 } from "@/lib/imagie/imagician";
@@ -92,6 +97,7 @@ type ResultImage = {
   saved: boolean;
 };
 
+const GEN_SNAPSHOT_KEY = "imagie.gen.form";
 const CFG_KEY = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/imagie/config`;
 const FOLDERS_KEY = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/imagie/folders`;
 
@@ -124,6 +130,8 @@ export function GenerateView() {
     fetcher
   );
   const baseUrl = config?.imagieBaseUrl ?? null;
+
+  const { prefill: overlayPrefill } = useGalleryOverlay();
 
   const [models, setModels] = useState<string[]>([]);
   const [modelDetail, setModelDetail] = useState<ModelDetail[]>([]);
@@ -170,6 +178,45 @@ export function GenerateView() {
     setFormCollapsedState(getFormCollapsed());
   }, []);
 
+  // Defensive: survive a hard refresh / real route nav too (the overlay
+  // gallery already keeps this component mounted). Prompt text + params only
+  // — no base64 images, no session results.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(GEN_SNAPSHOT_KEY);
+      if (!raw) {
+        return;
+      }
+      const s = JSON.parse(raw) as Record<string, unknown>;
+      if (s.fields) {
+        setFields(s.fields as PromptFields);
+      }
+      if (typeof s.negative === "string") {
+        setNegative(s.negative);
+      }
+      if (typeof s.sizePresetId === "string") {
+        setSizePresetId(s.sizePresetId);
+      }
+      if (typeof s.batchCount === "number") {
+        setBatchCount(s.batchCount);
+      }
+      if (s.seedMode === "random" || s.seedMode === "fixed") {
+        setSeedMode(s.seedMode);
+      }
+      if (typeof s.seedText === "string") {
+        setSeedText(s.seedText);
+      }
+      if (s.expertSettings) {
+        setExpertSettings(s.expertSettings as ExpertSettings);
+      }
+      if (typeof s.modelName === "string") {
+        setModelNameState(s.modelName);
+      }
+    } catch {
+      // best-effort
+    }
+  }, []);
+
   const toggleFormCollapsed = useCallback(() => {
     setFormCollapsedState((v) => {
       setFormCollapsed(!v);
@@ -177,36 +224,59 @@ export function GenerateView() {
     });
   }, []);
 
-  // "이 설정으로 다시 생성" from the gallery drops values here via sessionStorage.
+  // "이 설정으로 다시 생성" from the gallery overlay lands here.
   useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem("imagie.prefill");
-      if (!raw) {
-        return;
-      }
-      sessionStorage.removeItem("imagie.prefill");
-      const p = JSON.parse(raw) as {
-        prompt?: string;
-        negativePrompt?: string;
-        modelName?: string;
-      };
-      // Full replace — the reused prompt is a flat string, so it goes into
-      // the raw-override field and the structured fields are cleared.
-      setFields({ ...EMPTY_PROMPT_FIELDS, raw: p.prompt ?? "" });
-      setNegative(p.negativePrompt || DEFAULT_NEGATIVE);
-      if (p.modelName) {
-        setModelNameState(p.modelName);
-      }
-    } catch {
-      // best-effort
+    if (!overlayPrefill) {
+      return;
     }
-  }, []);
+    consumePrefill();
+    // Full replace — the reused prompt is a flat string, so it goes into the
+    // raw-override field and the structured fields are cleared.
+    setFields({ ...EMPTY_PROMPT_FIELDS, raw: overlayPrefill.prompt ?? "" });
+    setNegative(overlayPrefill.negativePrompt || DEFAULT_NEGATIVE);
+    if (overlayPrefill.modelName) {
+      setModelNameState(overlayPrefill.modelName);
+    }
+  }, [overlayPrefill]);
 
   useEffect(() => {
     if (!sizePresetId && presets[0]) {
       setSizePresetId(presets[0].id);
     }
   }, [presets, sizePresetId]);
+
+  // persist the form snapshot (debounced) for refresh recovery
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        sessionStorage.setItem(
+          GEN_SNAPSHOT_KEY,
+          JSON.stringify({
+            batchCount,
+            expertSettings,
+            fields,
+            modelName,
+            negative,
+            seedMode,
+            seedText,
+            sizePresetId,
+          })
+        );
+      } catch {
+        // best-effort
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [
+    batchCount,
+    expertSettings,
+    fields,
+    modelName,
+    negative,
+    seedMode,
+    seedText,
+    sizePresetId,
+  ]);
 
   // Fetch (or re-fetch) the model list from the pod. Called on mount and
   // again whenever the pod becomes reachable (RunpodBadge onReady) — the
@@ -984,12 +1054,13 @@ export function GenerateView() {
               >
                 {selected?.saved ? "저장됨" : "저장"}
               </Button>
-              <a
+              <button
                 className="text-[12px] text-muted-foreground underline"
-                href="/imagie/gallery"
+                onClick={() => openGallery()}
+                type="button"
               >
                 갤러리 열기
-              </a>
+              </button>
             </div>
             <div className="no-scrollbar flex gap-2 overflow-x-auto">
               {results.map((r) => (
