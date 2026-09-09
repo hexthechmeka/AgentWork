@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { FeatureBadge } from "@/components/imagie/feature-badge";
+import { ModelAdminTab } from "@/components/imagie/generate/model-admin-tab";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -56,7 +57,7 @@ export function ExpertPanel({
   baseUrl: string | null;
   samplingLocked: boolean;
 }) {
-  const [tab, setTab] = useState<"gen" | "server">("gen");
+  const [tab, setTab] = useState<"gen" | "models" | "server">("gen");
   const patch = useCallback(
     (p: Partial<ExpertSettings>) => onChange({ ...value, ...p }),
     [value, onChange]
@@ -73,6 +74,7 @@ export function ExpertPanel({
           {(
             [
               ["gen", "생성 설정"],
+              ["models", "모델"],
               ["server", "서버"],
             ] as const
           ).map(([id, label]) => (
@@ -177,9 +179,9 @@ export function ExpertPanel({
               value={advanced}
             />
           </div>
-        ) : (
-          <ServerTab />
-        )}
+        ) : null}
+        {tab === "models" ? <ModelAdminTab baseUrl={baseUrl} /> : null}
+        {tab === "server" ? <ServerTab /> : null}
       </SheetContent>
     </Sheet>
   );
