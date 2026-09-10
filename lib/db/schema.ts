@@ -18,8 +18,13 @@ export const user = pgTable("User", {
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   email: varchar("email", { length: 64 }).notNull(),
   emailVerified: boolean("emailVerified").notNull().default(false),
+  // Firebase Auth UID. Nullable — existing NextAuth-era rows have none until
+  // their owner signs in via Firebase and gets matched/attached by email
+  // (see upsertFirebaseUser in lib/db/queries.ts).
+  firebaseUid: text("firebaseUid").unique(),
   id: uuid("id").primaryKey().notNull().defaultRandom(),
   image: text("image"),
+  isAdmin: boolean("isAdmin").notNull().default(false),
   isAnonymous: boolean("isAnonymous").notNull().default(false),
   name: text("name"),
   password: varchar("password", { length: 64 }),

@@ -1,4 +1,4 @@
-import { getOrCreateOwnerUser, isProviderHardLocked } from "@/lib/db/queries";
+import { getOwnerUser, isProviderHardLocked } from "@/lib/db/queries";
 import { vultrSecretError } from "@/lib/dev/vultr";
 
 // Called server-to-server by the Vultr dev agent before every GLM call.
@@ -17,7 +17,11 @@ export async function GET(request: Request) {
     return Response.json({ error: "bad provider" }, { status: 400 });
   }
 
-  const [owner] = await getOrCreateOwnerUser();
+  const owner = await getOwnerUser();
+  if (!owner) {
+    // Owner hasn't signed in via Firebase yet — nothing to block against.
+    return Response.json({ blocked: false });
+  }
   const blocked = await isProviderHardLocked({
     provider: provider as "anthropic" | "glm" | "aichat",
     userId: owner.id,

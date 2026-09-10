@@ -10,11 +10,15 @@ export async function GET(request: Request) {
   await connection();
 
   const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const auth = request.headers.get("authorization");
-    if (auth !== `Bearer ${secret}`) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!secret) {
+    console.error(
+      "[imagie] cron cleanup blocked: CRON_SECRET is not set (fails closed)"
+    );
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const auth = request.headers.get("authorization");
+  if (auth !== `Bearer ${secret}`) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {

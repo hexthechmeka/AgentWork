@@ -48,6 +48,10 @@ const nextConfig: NextConfig = {
   },
   poweredByHeader: false,
   reactCompiler: true,
+  // firebase-admin pulls in jwks-rsa -> jose@6 (ESM-only). Letting the
+  // bundler externalize it makes Turbopack's runtime require() the ESM
+  // build and throw ERR_REQUIRE_ESM. Keep it a plain node_modules require.
+  serverExternalPackages: ["firebase-admin"],
 };
 
 export default nextConfig;

@@ -18,7 +18,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import type { ArtifactKind } from "@/components/chat/artifact";
 import type { VisibilityType } from "@/components/chat/visibility-selector";
-import { OWNER_EMAIL } from "../constants";
+import { isAdminEmail, OWNER_EMAIL } from "../constants";
 import { ChatbotError } from "../errors";
 import { generateUUID } from "../utils";
 import {
@@ -50,7 +50,6 @@ import {
   user,
   vote,
 } from "./schema";
-import { generateHashedPassword } from "./utils";
 
 const client = postgres(process.env.POSTGRES_URL ?? "");
 const db = drizzle(client);
@@ -63,58 +62,87 @@ export async function getUser(email: string): Promise<User[]> {
   }
 }
 
-export async function createUser(email: string, password: string) {
-  const hashedPassword = generateHashedPassword(password);
-
+// Firebase Auth identity → internal User row. Firebase only proves who
+// someone is; AgentWork's own `User.id` stays the ownership key everywhere
+// else (chats, projects, personas, ...), so this is the single place that
+// resolves a verified Firebase UID/email to that stable internal id.
+export async function getUserByFirebaseUid(
+  firebaseUid: string
+): Promise<User[]> {
   try {
-    return await db.insert(user).values({ email, password: hashedPassword });
+    return await db
+      .select()
+      .from(user)
+      .where(eq(user.firebaseUid, firebaseUid));
   } catch (error) {
-    throw new ChatbotError("bad_request:database", {
-      cause: error,
-    });
+    throw new ChatbotError("bad_request:database", { cause: error });
   }
 }
 
-// Single-user private deployment: instead of minting a throwaway
-// `guest-<timestamp>` user on every cookieless visit (which orphaned all
-// chat history whenever the JWT cookie was absent — new browser, new PC,
-// cleared cookies, 30-day expiry), resolve every anonymous session to one
-// stable account keyed by OWNER_EMAIL. Same userId everywhere → history
-// follows the user across devices with no login screen.
-export async function getOrCreateOwnerUser() {
+export async function upsertFirebaseUser({
+  firebaseUid,
+  email,
+  name,
+  image,
+}: {
+  firebaseUid: string;
+  email: string;
+  name?: string | null;
+  image?: string | null;
+}): Promise<User> {
   try {
-    const existing = await db
-      .select({ email: user.email, id: user.id })
+    const isAdmin = isAdminEmail(email);
+
+    const [byUid] = await getUserByFirebaseUid(firebaseUid);
+    if (byUid) {
+      const [updated] = await db
+        .update(user)
+        .set({ image: image ?? byUid.image, isAdmin, name: name ?? byUid.name })
+        .where(eq(user.id, byUid.id))
+        .returning();
+      return updated;
+    }
+
+    const [byEmail] = await getUser(email);
+    if (byEmail) {
+      const [updated] = await db
+        .update(user)
+        .set({
+          firebaseUid,
+          image: image ?? byEmail.image,
+          isAdmin,
+          name: name ?? byEmail.name,
+        })
+        .where(eq(user.id, byEmail.id))
+        .returning();
+      return updated;
+    }
+
+    const [created] = await db
+      .insert(user)
+      .values({ email, firebaseUid, image, isAdmin, name })
+      .returning();
+    return created;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+// Server-to-server routes (the Vultr dev agent's usage logging/limit
+// checks) authenticate with a shared secret, not a user session, but still
+// need a User.id to attribute usage to. Read-only — unlike the old
+// getOrCreateOwnerUser, this never fabricates an account; the owner row is
+// created the normal way (Firebase sign-in via /api/auth/session) and this
+// just looks it up. Returns null if the owner hasn't signed in yet.
+export async function getOwnerUser(): Promise<User | null> {
+  try {
+    const [existing] = await db
+      .select()
       .from(user)
       .where(eq(user.email, OWNER_EMAIL))
       .limit(1);
-
-    if (existing.length > 0) {
-      return existing;
-    }
-
-    const password = generateHashedPassword(generateUUID());
-    const inserted = await db
-      .insert(user)
-      .values({ email: OWNER_EMAIL, password })
-      .returning({ email: user.email, id: user.id });
-
-    return inserted;
+    return existing ?? null;
   } catch (error) {
-    // Lost an insert race with a concurrent first request — the row now
-    // exists, so just read it back.
-    try {
-      const existing = await db
-        .select({ email: user.email, id: user.id })
-        .from(user)
-        .where(eq(user.email, OWNER_EMAIL))
-        .limit(1);
-      if (existing.length > 0) {
-        return existing;
-      }
-    } catch {
-      // fall through to the original error
-    }
     throw new ChatbotError("bad_request:database", { cause: error });
   }
 }

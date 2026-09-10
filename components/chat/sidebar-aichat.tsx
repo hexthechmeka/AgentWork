@@ -2,8 +2,8 @@
 
 import { SparklesIcon } from "lucide-react";
 import Link from "next/link";
-import type { User } from "next-auth";
 import { useCallback } from "react";
+import type { User } from "@/app/(auth)/auth";
 import {
   SidebarGroup,
   SidebarGroupContent,
