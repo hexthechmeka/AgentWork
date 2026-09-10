@@ -23,12 +23,23 @@ config({ path: ".env.local" });
  * Run once, BEFORE the first Firebase sign-in:
  *   pnpm tsx lib/db/consolidate-to-admin.ts
  *
+ * CONSOLIDATE_EXTRA_EMAILS (comma-separated) folds in any other legacy
+ * addresses the admin also used — same repoint-then-delete as the owner row.
+ *
  * Idempotent: a second run finds no legacy rows and no-ops. Everything
  * happens in a single transaction — on any error nothing is changed.
  */
 
 const TARGET_EMAIL =
   process.env.CONSOLIDATE_TARGET_EMAIL ?? "hexthechmeka@gmail.com";
+
+// Other real addresses the admin signed in with over time that should also
+// collapse into TARGET_EMAIL. Comma-separated; matched literally alongside
+// `owner@agentwork.local` and the `guest-%` rows.
+const EXTRA_EMAILS = (process.env.CONSOLIDATE_EXTRA_EMAILS ?? "")
+  .split(",")
+  .map((e) => e.trim().toLowerCase())
+  .filter(Boolean);
 
 // RunpodSetting has userId as its PRIMARY KEY (one row per account), so it
 // can't be repointed with a blind UPDATE — handled separately below.
@@ -54,9 +65,16 @@ async function run() {
         );
       }
 
+      // `['']` keeps `= any()` valid (and matching nothing) when the env
+      // var is unset — postgres.js can't bind an empty array without a type.
+      const extraMatch = EXTRA_EMAILS.length > 0 ? EXTRA_EMAILS : [""];
       const sources = await sql`
         select id, email from "User"
-        where (email = 'owner@agentwork.local' or email like 'guest-%')
+        where (
+          email = 'owner@agentwork.local'
+          or email like 'guest-%'
+          or lower(email) = any(${extraMatch})
+        )
           and id <> ${target.id}
       `;
 
@@ -68,11 +86,20 @@ async function run() {
       }
 
       const sourceIds = sources.map((s) => s.id as string);
+      const extraMatched = sources.filter(
+        (s) =>
+          s.email !== "owner@agentwork.local" &&
+          !String(s.email).startsWith("guest-")
+      );
       console.log(
         `Target: ${target.email} (${target.id})\n` +
           `Merging ${sources.length} legacy row(s): ` +
           `${sources.filter((s) => s.email === "owner@agentwork.local").length} owner, ` +
-          `${sources.filter((s) => String(s.email).startsWith("guest-")).length} guest\n`
+          `${sources.filter((s) => String(s.email).startsWith("guest-")).length} guest` +
+          (extraMatched.length > 0
+            ? `, extra [${extraMatched.map((s) => s.email).join(", ")}]`
+            : "") +
+          "\n"
       );
 
       // Discover every FK column that references "User"(id), so tables added
