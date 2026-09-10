@@ -11,6 +11,12 @@ import {
 // lib/firebase/client.ts) for an httpOnly session cookie. This cookie IS
 // the session that app/(auth)/auth.ts's auth() verifies — replaces
 // NextAuth's JWT cookie entirely.
+function stepError(step: string, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`/api/auth/session POST failed at ${step}:`, error);
+  return Response.json({ error: message, step }, { status: 500 });
+}
+
 export async function POST(request: Request) {
   const { idToken } = (await request.json()) as { idToken?: string };
 
@@ -18,7 +24,13 @@ export async function POST(request: Request) {
     return Response.json({ error: "Missing idToken" }, { status: 400 });
   }
 
-  const adminAuth = getAdminAuth();
+  let adminAuth: ReturnType<typeof getAdminAuth>;
+  try {
+    adminAuth = getAdminAuth();
+  } catch (error) {
+    // Missing/invalid FIREBASE_PROJECT_ID / CLIENT_EMAIL / PRIVATE_KEY.
+    return stepError("admin-sdk-init", error);
+  }
 
   let decoded: Awaited<ReturnType<typeof adminAuth.verifyIdToken>>;
   try {
@@ -35,16 +47,28 @@ export async function POST(request: Request) {
     );
   }
 
-  await upsertFirebaseUser({
-    email: decoded.email,
-    firebaseUid: decoded.uid,
-    image: decoded.picture,
-    name: decoded.name,
-  });
+  try {
+    await upsertFirebaseUser({
+      email: decoded.email,
+      firebaseUid: decoded.uid,
+      image: decoded.picture,
+      name: decoded.name,
+    });
+  } catch (error) {
+    // DB unreachable, or migration 0012 (firebaseUid/isAdmin) not applied.
+    return stepError("upsert-user", error);
+  }
 
-  const sessionCookie = await adminAuth.createSessionCookie(idToken, {
-    expiresIn: SESSION_COOKIE_MAX_AGE_SECONDS * 1000,
-  });
+  let sessionCookie: string;
+  try {
+    sessionCookie = await adminAuth.createSessionCookie(idToken, {
+      expiresIn: SESSION_COOKIE_MAX_AGE_SECONDS * 1000,
+    });
+  } catch (error) {
+    // Usually a malformed FIREBASE_PRIVATE_KEY, or the service account
+    // lacks the "Service Account Token Creator" role.
+    return stepError("create-session-cookie", error);
+  }
 
   const store = await cookies();
   store.set(SESSION_COOKIE_NAME, sessionCookie, sessionCookieOptions);
