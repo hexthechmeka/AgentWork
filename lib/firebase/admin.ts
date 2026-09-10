@@ -22,17 +22,68 @@ import {
 } from "firebase-admin/app";
 import { type Auth, getAuth } from "firebase-admin/auth";
 
+// Turns whatever is in FIREBASE_PRIVATE_KEY into a real PEM string.
+// Handles the usual env-var mangling: wrapping quotes, literal "\n" (single
+// or double-escaped), and \r\n.
+function normalizePrivateKey(raw: string): string {
+  let key = raw.trim();
+  if (
+    (key.startsWith('"') && key.endsWith('"')) ||
+    (key.startsWith("'") && key.endsWith("'"))
+  ) {
+    key = key.slice(1, -1);
+  }
+  return key
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\r\n/g, "\n");
+}
+
+function logKeyShape(raw: string | undefined) {
+  if (!raw) {
+    console.error("FIREBASE_PRIVATE_KEY is not set");
+    return;
+  }
+  // The PEM header is not secret; the body is never logged.
+  console.log("FIREBASE_PRIVATE_KEY shape:", {
+    endsWithFooter: raw.trimEnd().endsWith("-----END PRIVATE KEY-----"),
+    hasDoubleEscaped: raw.includes("\\\\n"),
+    hasLiteralBackslashN: raw.includes("\\n"),
+    hasRealNewline: raw.includes("\n"),
+    len: raw.length,
+    looksLikeJson: raw.trimStart().startsWith("{"),
+    quoted: raw.startsWith('"') || raw.startsWith("'"),
+    startsWith: raw.slice(0, 27),
+  });
+}
+
 function buildCredential() {
+  // Option A: the entire downloaded service-account JSON in one env var —
+  // sidesteps all the private-key newline mangling.
+  const jsonRaw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  if (jsonRaw?.trim().startsWith("{")) {
+    const parsed = JSON.parse(jsonRaw) as {
+      client_email: string;
+      private_key: string;
+      project_id: string;
+    };
+    return cert({
+      clientEmail: parsed.client_email,
+      privateKey: normalizePrivateKey(parsed.private_key),
+      projectId: parsed.project_id,
+    });
+  }
+
+  // Option B: the three discrete vars.
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = process.env.FIREBASE_PRIVATE_KEY;
 
   if (projectId && clientEmail && privateKey) {
+    logKeyShape(privateKey);
     return cert({
       clientEmail,
-      // Service-account keys are stored as a single-line env var with
-      // literal "\n" sequences standing in for real newlines.
-      privateKey: privateKey.replace(/\\n/g, "\n"),
+      privateKey: normalizePrivateKey(privateKey),
       projectId,
     });
   }
