@@ -43,6 +43,9 @@ export async function PUT(request: Request) {
   if (!session?.user) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (!session.user.isAdmin) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
   let body: z.infer<typeof bodySchema>;
   try {
     body = bodySchema.parse(await request.json());

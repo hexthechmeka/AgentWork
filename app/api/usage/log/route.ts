@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { trackUsage } from "@/lib/ai/usage";
-import { getOrCreateOwnerUser } from "@/lib/db/queries";
+import { getOwnerUser } from "@/lib/db/queries";
 import { vultrSecretError } from "@/lib/dev/vultr";
 
 // Called (fire-and-forget) by the Vultr dev agent after each GLM call.
@@ -26,7 +26,11 @@ export async function POST(request: Request) {
     return Response.json({ error: "Bad request" }, { status: 400 });
   }
 
-  const [owner] = await getOrCreateOwnerUser();
+  const owner = await getOwnerUser();
+  if (!owner) {
+    // Owner hasn't signed in via Firebase yet — nothing to attribute to.
+    return Response.json({ ok: true, skipped: "no owner user" });
+  }
   await trackUsage({
     modelId: body.model.startsWith("glm/") ? body.model : `glm/${body.model}`,
     usage: { inputTokens: body.inputTokens, outputTokens: body.outputTokens },

@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { Toaster } from "sonner";
+import { auth } from "@/app/(auth)/auth";
 import { AichatProviders } from "@/components/aichat/aichat-providers";
 import { AichatSidebar } from "@/components/aichat/aichat-sidebar";
 import { AppShellSkeleton } from "@/components/chat/app-shell-skeleton";
@@ -25,6 +27,11 @@ export default function AichatLayout({
 }
 
 async function AichatShell({ children }: { children: React.ReactNode }) {
+  const session = await auth();
+  if (!session?.user) {
+    redirect("/login");
+  }
+
   const cookieStore = await cookies();
   const isCollapsed = cookieStore.get("sidebar_state")?.value !== "true";
 

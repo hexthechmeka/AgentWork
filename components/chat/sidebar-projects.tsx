@@ -2,10 +2,10 @@
 
 import { ChevronRightIcon, FolderIcon, PlusIcon } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import type { User } from "next-auth";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
+import type { User } from "@/app/(auth)/auth";
 import { updateChatProject } from "@/app/(chat)/actions";
 import {
   AlertDialog,

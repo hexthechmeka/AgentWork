@@ -1,7 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
 import { ACCESS_COOKIE, sha256Hex } from "./lib/access-gate";
-import { guestRegex, isDevelopmentEnvironment } from "./lib/constants";
+import { SESSION_COOKIE_NAME } from "./lib/firebase/session";
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -39,29 +38,35 @@ export async function proxy(request: NextRequest) {
   }
 
   // Vultr dev-agent server-to-server routes authenticate with a shared
-  // secret inside the handler — no session cookie, so skip the guest
+  // secret inside the handler — no session cookie, so skip the login
   // redirect and let the handler return 401 if the secret is wrong.
   if (pathname === "/api/usage/check" || pathname === "/api/usage/log") {
     return NextResponse.next();
   }
 
-  const token = await getToken({
-    req: request,
-    secret: process.env.AUTH_SECRET,
-    secureCookie: !isDevelopmentEnvironment,
-  });
+  const isLoginPage = pathname === "/login" || pathname === "/register";
 
-  if (!token) {
-    const redirectUrl = encodeURIComponent(new URL(request.url).pathname);
+  // admin.auth().verifySessionCookie() needs the Admin SDK (Node crypto,
+  // network calls to Google) — not Edge-safe. So this only checks whether
+  // the cookie is present, not whether it's actually valid; real
+  // verification happens in every route/layout's own auth() call (same
+  // deferral pattern this app already uses for ownership checks — see the
+  // data-isolation audit). A forged/expired cookie still gets rejected
+  // there, just one hop later than here.
+  const hasSessionCookie = Boolean(
+    request.cookies.get(SESSION_COOKIE_NAME)?.value
+  );
 
+  if (!hasSessionCookie && !isLoginPage) {
+    const redirectUrl = encodeURIComponent(
+      request.nextUrl.pathname + request.nextUrl.search
+    );
     return NextResponse.redirect(
-      new URL(`${base}/api/auth/guest?redirectUrl=${redirectUrl}`, request.url)
+      new URL(`${base}/login?redirect=${redirectUrl}`, request.url)
     );
   }
 
-  const isGuest = guestRegex.test(token?.email ?? "");
-
-  if (token && !isGuest && ["/login", "/register"].includes(pathname)) {
+  if (hasSessionCookie && isLoginPage) {
     return NextResponse.redirect(new URL(`${base}/`, request.url));
   }
 
