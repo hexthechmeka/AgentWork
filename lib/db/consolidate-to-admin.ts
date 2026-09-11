@@ -144,6 +144,38 @@ async function run() {
         }
       }
 
+      // Folder: each legacy account had its own "미분류"/"임시" system
+      // folders, so the blind FK move above just gave the target N copies
+      // of each (same name, isSystem=true) instead of merging them. Keep
+      // the earliest-created row per name, move ImagieImage.folderId off
+      // the rest, then drop them — must happen in that order, since
+      // ImagieImage.folderId is ON DELETE CASCADE.
+      const systemFolders = await sql<{ id: string; name: string }[]>`
+        select id, name from "Folder"
+        where "userId" = ${target.id} and "isSystem" = true
+        order by name, "createdAt" asc
+      `;
+      const folderGroups = new Map<string, { id: string }[]>();
+      for (const f of systemFolders) {
+        const arr = folderGroups.get(f.name) ?? [];
+        arr.push(f);
+        folderGroups.set(f.name, arr);
+      }
+      for (const [name, rows] of folderGroups) {
+        if (rows.length <= 1) {
+          continue;
+        }
+        const [keep, ...dupes] = rows;
+        const dupeIds = dupes.map((d) => d.id);
+        // biome-ignore lint/performance/noAwaitInLoops: one-off script — move-then-delete per group must stay sequential
+        const movedImages = await sql`
+          update "ImagieImage" set "folderId" = ${keep.id}
+          where "folderId" in ${sql(dupeIds)}
+        `;
+        await sql`delete from "Folder" where id in ${sql(dupeIds)}`;
+        summary[`Folder "${name}" (deduped)`] = movedImages.count;
+      }
+
       // RunpodSetting: keep the target's row if it already has one, else
       // promote the most-recently-updated legacy row; drop the rest.
       const [targetRunpod] = await sql`

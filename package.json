@@ -13,6 +13,7 @@
     "db:migrate": "npx tsx lib/db/migrate.ts",
     "db:consolidate-guests": "npx tsx lib/db/consolidate-guests.ts",
     "db:consolidate-to-admin": "npx tsx lib/db/consolidate-to-admin.ts",
+    "db:dedupe-system-folders": "npx tsx lib/db/dedupe-system-folders.ts",
     "db:studio": "drizzle-kit studio",
     "db:push": "drizzle-kit push",
     "db:pull": "drizzle-kit pull",
