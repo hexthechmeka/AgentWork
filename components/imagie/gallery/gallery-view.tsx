@@ -1,9 +1,10 @@
 "use client";
 
-import { FolderPlusIcon, MoreVerticalIcon } from "lucide-react";
-import { useCallback, useState } from "react";
+import { FolderPlusIcon, MoreVerticalIcon, Trash2Icon } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
+import { GalleryThumbnail } from "@/components/imagie/gallery/thumbnail";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,6 +25,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { openGallery } from "@/lib/imagie/gallery-overlay";
+import { getIncognito } from "@/lib/imagie/gallery-prefs";
 import { fetcher } from "@/lib/utils";
 
 // Show the auto-managed "임시" folder as a card (spec §11 — TODO: make this a
@@ -48,6 +50,13 @@ export function GalleryView() {
   const [renameTarget, setRenameTarget] = useState<FolderMeta | null>(null);
   const [renameText, setRenameText] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<FolderMeta | null>(null);
+  const [incognito, setIncognitoState] = useState(false);
+  const [confirmEmptyTemp, setConfirmEmptyTemp] = useState(false);
+  const [emptyingTemp, setEmptyingTemp] = useState(false);
+
+  useEffect(() => {
+    setIncognitoState(getIncognito());
+  }, []);
 
   const createFolder = useCallback(async () => {
     if (!newName.trim()) {
@@ -95,6 +104,28 @@ export function GalleryView() {
     toast.success("폴더를 삭제했습니다 (이미지는 미분류로 이동)");
   }, [deleteTarget, mutate]);
 
+  const doEmptyTemp = useCallback(async () => {
+    setEmptyingTemp(true);
+    try {
+      const res = await fetch(`${KEY}/temp/empty`, { method: "POST" });
+      if (!res.ok) {
+        throw new Error("empty failed");
+      }
+      const body = (await res.json()) as { deleted: number };
+      await mutate();
+      toast.success(
+        body.deleted > 0
+          ? `임시 폴더 ${body.deleted}장 삭제`
+          : "임시 폴더가 비어있습니다"
+      );
+    } catch {
+      toast.error("임시 폴더 비우기 실패");
+    } finally {
+      setEmptyingTemp(false);
+      setConfirmEmptyTemp(false);
+    }
+  }, [mutate]);
+
   const folders = (data?.folders ?? []).filter(
     (f) => SHOW_TEMP_FOLDER || f.name !== "임시"
   );
@@ -116,14 +147,10 @@ export function GalleryView() {
                 type="button"
               >
                 <div className="aspect-square bg-muted/40">
-                  {f.coverThumbUrl ? (
-                    // biome-ignore lint/performance/noImgElement: blob thumb
-                    <img
-                      alt=""
-                      className="size-full object-cover"
-                      src={f.coverThumbUrl}
-                    />
-                  ) : null}
+                  <GalleryThumbnail
+                    incognito={incognito}
+                    src={f.coverThumbUrl}
+                  />
                 </div>
                 <div className="flex items-center justify-between px-2.5 py-2">
                   <span className="truncate font-medium text-[13px]">
@@ -135,9 +162,22 @@ export function GalleryView() {
                 </div>
               </button>
               {f.name === "임시" ? (
-                <span className="absolute top-2 left-2 rounded bg-amber-500/90 px-1.5 py-0.5 text-[10px] font-medium text-white">
-                  임시 · 7일
-                </span>
+                <>
+                  <span className="absolute top-2 left-2 rounded bg-amber-500/90 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                    임시 · 7일
+                  </span>
+                  {f.imageCount > 0 ? (
+                    <button
+                      className="absolute top-1.5 right-1.5 flex items-center gap-1 rounded-md bg-background/80 px-1.5 py-1 text-[11px] opacity-0 transition-opacity group-hover:opacity-100"
+                      onClick={() => setConfirmEmptyTemp(true)}
+                      title="임시 폴더 비우기"
+                      type="button"
+                    >
+                      <Trash2Icon className="size-3.5" />
+                      비우기
+                    </button>
+                  ) : null}
+                </>
               ) : null}
               {f.isSystem ? null : (
                 <DropdownMenu>
@@ -233,6 +273,24 @@ export function GalleryView() {
           <AlertDialogFooter>
             <AlertDialogCancel>취소</AlertDialogCancel>
             <AlertDialogAction onClick={doDelete}>삭제</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog onOpenChange={setConfirmEmptyTemp} open={confirmEmptyTemp}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>임시 폴더를 비울까요?</AlertDialogTitle>
+            <AlertDialogDescription>
+              임시 폴더의 이미지가 전부(7일 경과 여부와 무관하게) 영구
+              삭제됩니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction disabled={emptyingTemp} onClick={doEmptyTemp}>
+              비우기
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

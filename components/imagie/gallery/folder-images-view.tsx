@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { ImageDetailModal } from "@/components/imagie/gallery/image-detail-modal";
+import { GalleryThumbnail } from "@/components/imagie/gallery/thumbnail";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -93,6 +94,16 @@ export function FolderImagesView({ folderId }: { folderId: string }) {
     setSelected(new Set());
     setAnchor(null);
   }, []);
+
+  const allSelected = visible.length > 0 && selected.size === visible.length;
+  const toggleSelectAll = useCallback(() => {
+    if (allSelected) {
+      clearSel();
+    } else {
+      setSelected(new Set(visible.map((v) => v.id)));
+      setAnchor(null);
+    }
+  }, [allSelected, visible, clearSel]);
 
   const toggle = useCallback((id: string) => {
     setSelected((prev) => {
@@ -358,6 +369,14 @@ export function FolderImagesView({ folderId }: { folderId: string }) {
             <option value="model">모델순</option>
           </select>
           <Button
+            disabled={visible.length === 0}
+            onClick={toggleSelectAll}
+            size="sm"
+            variant={allSelected ? "default" : "outline"}
+          >
+            {allSelected ? "전체 해제" : "전체선택"}
+          </Button>
+          <Button
             onClick={toggleIncognito}
             size="icon"
             title="썸네일 가리기"
@@ -477,15 +496,8 @@ export function FolderImagesView({ folderId }: { folderId: string }) {
                     onDragStart={(e) => onDragStart(e, img.id)}
                     type="button"
                   >
-                    {/* biome-ignore lint/performance/noImgElement: blob thumb */}
-                    <img
-                      alt=""
-                      className={
-                        incognito
-                          ? "size-full object-cover blur-xl"
-                          : "size-full object-cover"
-                      }
-                      draggable={false}
+                    <GalleryThumbnail
+                      incognito={incognito}
                       src={img.thumbUrl}
                     />
                   </button>
