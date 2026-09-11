@@ -2,11 +2,16 @@ import { config } from "dotenv";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { OWNER_EMAIL } from "../constants";
-import { encryptSecret } from "../crypto/credentials";
+import { encryptSecret } from "../crypto/credentials-core";
 import { user, userCredential } from "./schema";
 
 config({ path: ".env.local" });
+
+// Read directly (not via lib/constants.ts's OWNER_EMAIL) — that constant is
+// computed at import time, which runs before the config() call above since
+// ES module imports are hoisted, so it would always see the pre-.env.local
+// value.
+const OWNER_EMAIL = process.env.OWNER_EMAIL ?? "owner@agentwork.local";
 
 /**
  * One-off: BYOK hard cutover. Seeds the admin's UserCredential row from the

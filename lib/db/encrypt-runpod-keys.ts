@@ -2,7 +2,7 @@ import { config } from "dotenv";
 import { eq, isNotNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { encryptSecret } from "../crypto/credentials";
+import { encryptSecret } from "../crypto/credentials-core";
 import { runpodSetting } from "./schema";
 
 config({ path: ".env.local" });
