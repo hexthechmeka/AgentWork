@@ -1,6 +1,7 @@
 "use client";
 
 import { Trash2Icon } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -37,21 +38,16 @@ function ServerSection() {
     hasRunpodKey: boolean;
   }>(SETTINGS_KEY, fetcher);
   const [podId, setPodId] = useState<string | null>(null);
-  const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
 
   const save = useCallback(async () => {
+    if (podId === null) {
+      return;
+    }
     setSaving(true);
     try {
-      const body: Record<string, string> = {};
-      if (podId !== null) {
-        body.podId = podId;
-      }
-      if (apiKey.trim()) {
-        body.apiKey = apiKey.trim();
-      }
       const res = await fetch(SETTINGS_KEY, {
-        body: JSON.stringify(body),
+        body: JSON.stringify({ podId }),
         headers: { "Content-Type": "application/json" },
         method: "PUT",
       });
@@ -59,7 +55,6 @@ function ServerSection() {
         const b = await res.json().catch(() => ({}));
         throw new Error(b.error);
       }
-      setApiKey("");
       setPodId(null);
       await mutate();
       toast.success("저장되었습니다");
@@ -68,7 +63,7 @@ function ServerSection() {
     } finally {
       setSaving(false);
     }
-  }, [podId, apiKey, mutate]);
+  }, [podId, mutate]);
 
   return (
     <section className="flex flex-col gap-3">
@@ -81,24 +76,18 @@ function ServerSection() {
           value={podId ?? data?.podId ?? ""}
         />
       </div>
-      <div className="flex flex-col gap-1.5">
-        <span className="text-[12px] text-muted-foreground">RunPod API 키</span>
-        <Input
-          onChange={(e) => setApiKey(e.target.value)}
-          placeholder={
-            data?.hasRunpodKey
-              ? "설정됨 — 바꾸려면 새 키 입력"
-              : "rest.runpod.io 계정 키 (전원 제어용)"
-          }
-          type="password"
-          value={apiKey}
-        />
-      </div>
       <p className="text-[12px] text-muted-foreground">
-        키는 서버에만 저장되며 브라우저로 다시 내려오지 않습니다. Pod ID는 전체
-        URL을 붙여넣어도 자동으로 ID만 추출됩니다.
+        RunPod API 키는{" "}
+        <Link className="underline" href="/settings">
+          연동 설정
+        </Link>
+        에서 등록합니다 ({data?.hasRunpodKey ? "설정됨" : "미설정"}).
       </p>
-      <Button className="w-fit" disabled={saving} onClick={save}>
+      <Button
+        className="w-fit"
+        disabled={saving || podId === null}
+        onClick={save}
+      >
         {saving ? "저장 중…" : "저장"}
       </Button>
     </section>

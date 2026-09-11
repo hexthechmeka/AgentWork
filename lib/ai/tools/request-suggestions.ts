@@ -5,18 +5,20 @@ import { getDocumentById, saveSuggestions } from "@/lib/db/queries";
 import type { Suggestion } from "@/lib/db/schema";
 import type { ChatMessage } from "@/lib/types";
 import { generateUUID } from "@/lib/utils";
-import { getLanguageModel } from "../providers";
+import type { UserModels } from "../providers";
 
 type RequestSuggestionsProps = {
   session: Session;
   dataStream: UIMessageStreamWriter<ChatMessage>;
   modelId: string;
+  models: UserModels;
 };
 
 export const requestSuggestions = ({
   session,
   dataStream,
   modelId,
+  models,
 }: RequestSuggestionsProps) =>
   tool({
     description:
@@ -42,7 +44,7 @@ export const requestSuggestions = ({
       const { partialOutputStream } = streamText({
         instructions:
           "You are a writing assistant. Given a piece of writing, offer up to 5 suggestions to improve it. Each suggestion must contain full sentences, not just individual words. Describe what changed and why.",
-        model: getLanguageModel(modelId),
+        model: models.languageModel(modelId),
         output: Output.array({
           element: z.object({
             description: z

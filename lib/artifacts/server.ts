@@ -4,6 +4,7 @@ import { codeDocumentHandler } from "@/artifacts/code/server";
 import { sheetDocumentHandler } from "@/artifacts/sheet/server";
 import { textDocumentHandler } from "@/artifacts/text/server";
 import type { ArtifactKind } from "@/components/chat/artifact";
+import type { UserModels } from "../ai/providers";
 import { saveDocument } from "../db/queries";
 import type { Document } from "../db/schema";
 import type { ChatMessage } from "../types";
@@ -22,6 +23,7 @@ export type CreateDocumentCallbackProps = {
   dataStream: UIMessageStreamWriter<ChatMessage>;
   session: Session;
   modelId: string;
+  models: UserModels;
 };
 
 export type UpdateDocumentCallbackProps = {
@@ -30,6 +32,7 @@ export type UpdateDocumentCallbackProps = {
   dataStream: UIMessageStreamWriter<ChatMessage>;
   session: Session;
   modelId: string;
+  models: UserModels;
 };
 
 export type DocumentHandler<T = ArtifactKind> = {
@@ -50,6 +53,7 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
         dataStream: args.dataStream,
         id: args.id,
         modelId: args.modelId,
+        models: args.models,
         session: args.session,
         title: args.title,
       });
@@ -70,6 +74,7 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
         description: args.description,
         document: args.document,
         modelId: args.modelId,
+        models: args.models,
         session: args.session,
       });
 

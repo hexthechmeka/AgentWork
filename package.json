@@ -14,6 +14,8 @@
     "db:consolidate-guests": "npx tsx lib/db/consolidate-guests.ts",
     "db:consolidate-to-admin": "npx tsx lib/db/consolidate-to-admin.ts",
     "db:dedupe-system-folders": "npx tsx lib/db/dedupe-system-folders.ts",
+    "db:encrypt-runpod-keys": "npx tsx lib/db/encrypt-runpod-keys.ts",
+    "db:seed-admin-credentials": "npx tsx lib/db/seed-admin-credentials.ts",
     "db:studio": "drizzle-kit studio",
     "db:push": "drizzle-kit push",
     "db:pull": "drizzle-kit pull",

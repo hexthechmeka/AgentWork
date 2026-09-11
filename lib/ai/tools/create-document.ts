@@ -1,6 +1,7 @@
 import { tool, type UIMessageStreamWriter } from "ai";
 import { z } from "zod";
 import type { Session } from "@/app/(auth)/auth";
+import type { UserModels } from "@/lib/ai/providers";
 import {
   artifactKinds,
   documentHandlersByArtifactKind,
@@ -12,12 +13,14 @@ type CreateDocumentProps = {
   session: Session;
   dataStream: UIMessageStreamWriter<ChatMessage>;
   modelId: string;
+  models: UserModels;
 };
 
 export const createDocument = ({
   session,
   dataStream,
   modelId,
+  models,
 }: CreateDocumentProps) =>
   tool({
     description:
@@ -62,6 +65,7 @@ export const createDocument = ({
         dataStream,
         id,
         modelId,
+        models,
         session,
         title,
       });

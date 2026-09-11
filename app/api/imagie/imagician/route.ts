@@ -1,7 +1,11 @@
 import { generateObject } from "ai";
 import { z } from "zod";
 import { auth } from "@/app/(auth)/auth";
-import { getLanguageModel } from "@/lib/ai/providers";
+import {
+  MissingCredentialError,
+  missingCredentialMessage,
+} from "@/lib/ai/providers";
+import { resolveModelsForUser } from "@/lib/ai/user-models";
 import { IMAGICIAN_SYSTEM, imagicianSchema } from "@/lib/imagie/imagician";
 
 // i-magician turn: takes the running chat and returns the next assistant
@@ -33,15 +37,22 @@ export async function POST(request: Request) {
   }
 
   try {
+    const models = await resolveModelsForUser(session.user.id);
     const { object } = await generateObject({
       messages: body.messages,
-      model: getLanguageModel("anthropic/claude-haiku-4-5-20251001"),
+      model: models.languageModel("anthropic/claude-haiku-4-5-20251001"),
       schema: imagicianSchema,
       system: IMAGICIAN_SYSTEM,
       temperature: 0.7,
     });
     return Response.json(object);
   } catch (error) {
+    if (error instanceof MissingCredentialError) {
+      return Response.json(
+        { error: missingCredentialMessage(error) },
+        { status: 400 }
+      );
+    }
     console.error("[imagie] imagician failed:", error);
     return Response.json({ error: "생성 도우미 호출 실패" }, { status: 502 });
   }

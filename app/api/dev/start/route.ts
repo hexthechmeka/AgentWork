@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { auth } from "@/app/(auth)/auth";
-import { getProjectById } from "@/lib/db/queries";
+import {
+  createDevJob,
+  getProjectById,
+  getUserCredentials,
+} from "@/lib/db/queries";
 import { VultrUnconfiguredError, vultrFetch } from "@/lib/dev/vultr";
 
 const bodySchema = z.object({
@@ -38,18 +42,40 @@ export async function POST(request: Request) {
     );
   }
 
+  const creds = await getUserCredentials(session.user.id);
+  if (!(creds?.githubPat && creds?.glmApiKey)) {
+    return Response.json(
+      {
+        error: "연동 설정에서 GitHub PAT / GLM API Key를 먼저 등록하세요",
+      },
+      { status: 400 }
+    );
+  }
+
   try {
     const res = await vultrFetch("/run", {
       body: JSON.stringify({
+        githubPat: creds.githubPat,
         instruction: body.instruction,
+        llmApiKey: creds.glmApiKey,
+        llmProvider: "glm",
         projectId: body.projectId,
         repoUrl,
+        userId: session.user.id,
       }),
       method: "POST",
     });
     const text = await res.text();
     if (!res.ok) {
       return new Response(text || "vultr /run failed", { status: res.status });
+    }
+    const parsed = JSON.parse(text) as { jobId?: string };
+    if (parsed.jobId) {
+      await createDevJob({
+        id: parsed.jobId,
+        projectId: body.projectId,
+        userId: session.user.id,
+      });
     }
     return new Response(text, {
       headers: { "Content-Type": "application/json" },

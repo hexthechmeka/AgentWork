@@ -1,6 +1,7 @@
 import { tool, type UIMessageStreamWriter } from "ai";
 import { z } from "zod";
 import type { Session } from "@/app/(auth)/auth";
+import type { UserModels } from "@/lib/ai/providers";
 import { documentHandlersByArtifactKind } from "@/lib/artifacts/server";
 import { getDocumentById } from "@/lib/db/queries";
 import type { ChatMessage } from "@/lib/types";
@@ -9,12 +10,14 @@ type UpdateDocumentProps = {
   session: Session;
   dataStream: UIMessageStreamWriter<ChatMessage>;
   modelId: string;
+  models: UserModels;
 };
 
 export const updateDocument = ({
   session,
   dataStream,
   modelId,
+  models,
 }: UpdateDocumentProps) =>
   tool({
     description:
@@ -52,6 +55,7 @@ export const updateDocument = ({
         description,
         document,
         modelId,
+        models,
         session,
       });
 

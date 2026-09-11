@@ -1,4 +1,5 @@
 import { auth } from "@/app/(auth)/auth";
+import { getDevJob } from "@/lib/db/queries";
 import { VultrUnconfiguredError, vultrFetch } from "@/lib/dev/vultr";
 
 // Plain passthrough of Vultr's SSE stream — the upstream ReadableStream is
@@ -14,6 +15,11 @@ export async function GET(_request: Request, { params }: Ctx) {
   const { jobId } = await params;
   if (!/^[a-zA-Z0-9-]{1,64}$/.test(jobId)) {
     return Response.json({ error: "bad jobId" }, { status: 400 });
+  }
+
+  const job = await getDevJob(jobId);
+  if (!job || job.userId !== session.user.id) {
+    return Response.json({ error: "Not found" }, { status: 404 });
   }
 
   let upstream: Response;
