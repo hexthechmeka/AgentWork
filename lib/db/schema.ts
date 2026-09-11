@@ -342,3 +342,37 @@ export const runpodSetting = pgTable("RunpodSetting", {
 });
 
 export type RunpodSetting = InferSelectModel<typeof runpodSetting>;
+
+// ─── BYOK (bring-your-own-key) ────────────────────────────────────────────
+// One row per account. All fields are encrypted at rest (see
+// lib/crypto/credentials.ts) and nullable — a user only fills in the keys
+// for the features they use. Never returned to the browser as plaintext.
+export const userCredential = pgTable("UserCredential", {
+  anthropicApiKey: text("anthropicApiKey"),
+  githubPat: text("githubPat"),
+  glmApiKey: text("glmApiKey"),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  userId: uuid("userId")
+    .primaryKey()
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+});
+
+export type UserCredential = InferSelectModel<typeof userCredential>;
+
+// A "개발 시작" run on the Vultr dev-agent. `id` is the jobId Vultr mints
+// (not our own uuid default) — lets /api/dev/stream/[jobId] verify the
+// caller owns the job before proxying its SSE stream, and lets
+// /api/usage/log attribute Vultr-reported token usage to the right user.
+export const devJob = pgTable("DevJob", {
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  id: text("id").primaryKey().notNull(),
+  projectId: uuid("projectId")
+    .notNull()
+    .references(() => project.id, { onDelete: "cascade" }),
+  userId: uuid("userId")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+});
+
+export type DevJob = InferSelectModel<typeof devJob>;

@@ -4,8 +4,12 @@ import { generateText } from "ai";
 import { auth } from "@/app/(auth)/auth";
 import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
 import { providerForModel } from "@/lib/ai/pricing";
-import { getLanguageModel } from "@/lib/ai/providers";
+import {
+  MissingCredentialError,
+  missingCredentialMessage,
+} from "@/lib/ai/providers";
 import { trackUsage } from "@/lib/ai/usage";
+import { resolveModelsForUser } from "@/lib/ai/user-models";
 import {
   getChatById,
   getMessagesByChatId,
@@ -19,6 +23,20 @@ async function guardProvider(userId: string, modelId: string) {
     throw new Error(
       "한도에 도달하여 메시지를 전송할 수 없습니다. 한도 재설정이 필요합니다."
     );
+  }
+}
+
+/** Resolves the caller's model, translating a missing BYOK key into the
+ * same plain-Error-with-Korean-message convention as guardProvider. */
+async function getModelOrThrow(userId: string, modelId: string) {
+  const models = await resolveModelsForUser(userId);
+  try {
+    return models.languageModel(modelId);
+  } catch (error) {
+    if (error instanceof MissingCredentialError) {
+      throw new Error(missingCredentialMessage(error), { cause: error });
+    }
+    throw error;
   }
 }
 
@@ -76,7 +94,7 @@ export async function generateMeetingNotes({ chatId }: { chatId: string }) {
   const { text, usage } = await generateText({
     instructions:
       "너는 회의 노트 작성자야. 주어진 기획 대화를 자유 형식의 노트로 정리해. 마크다운 헤더/불릿을 적절히 써서 핵심 논의사항, 결정사항, 남은 질문을 정리해. 장황하게 쓰지 말고 핵심만 간결하게.",
-    model: getLanguageModel(DEFAULT_CHAT_MODEL),
+    model: await getModelOrThrow(session.user.id, DEFAULT_CHAT_MODEL),
     prompt: transcript,
   });
 
@@ -108,7 +126,7 @@ export async function updateMeetingNotesIncremental({
   const { text, usage } = await generateText({
     instructions:
       "너는 실시간 회의 노트 작성자야. 기존 노트에 방금 오간 대화 한 턴만 반영해서 노트를 업데이트해. 전체를 다시 쓰지 말고 기존 구조와 이미 있는 내용은 최대한 유지한 채, 새로 나온 내용만 자연스러운 위치에 추가하거나 관련 있는 기존 항목을 수정해. 마크다운 형식을 유지해.",
-    model: getLanguageModel(NOTES_LIVE_MODEL_ID),
+    model: await getModelOrThrow(session.user.id, NOTES_LIVE_MODEL_ID),
     prompt: `## 기존 노트\n${previousNotes}\n\n## 방금 오간 대화\n사용자: ${userText}\nClaude: ${assistantText}`,
   });
 
@@ -139,7 +157,7 @@ export async function generateSpecFromNotes({
   const { text, usage } = await generateText({
     instructions:
       "너는 소프트웨어 구현계획서 작성자야. 주어진 노트와 기획 대화 원문을 바탕으로 정식 구현계획서를 마크다운으로 작성해. 목표, 범위, 주요 기능, 데이터 모델/API 변경, 일정/우선순위, 리스크 섹션을 포함해.",
-    model: getLanguageModel(modelId),
+    model: await getModelOrThrow(session.user.id, modelId),
     prompt: `## 노트\n${notes}\n\n## 기획 대화 원문\n${transcript}`,
   });
 
@@ -181,7 +199,7 @@ ${ANNOTATED_MARKER}
 (마커가 삽입된 전체 구현계획서 원문)
 ${EXPLANATION_MARKER}
 (위 첨언들에 대한 자세한 해설, 채팅 메시지 형태로)`,
-    model: getLanguageModel(GLM_REVIEW_MODEL_ID),
+    model: await getModelOrThrow(session.user.id, GLM_REVIEW_MODEL_ID),
     prompt: spec,
   });
 

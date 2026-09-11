@@ -92,6 +92,13 @@
       "when": 1789004662717,
       "tag": "0012_parallel_norrin_radd",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789111089043,
+      "tag": "0013_opposite_tomas",
+      "breakpoints": true
     }
   ]
 }

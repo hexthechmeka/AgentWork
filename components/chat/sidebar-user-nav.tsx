@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronUp } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useCallback } from "react";
@@ -68,6 +69,11 @@ export function SidebarUserNav({ user }: { user: User }) {
             data-testid="user-nav-menu"
             side="top"
           >
+            <DropdownMenuItem asChild data-testid="user-nav-item-settings">
+              <Link className="cursor-pointer text-[13px]" href="/settings">
+                연동 설정
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuItem
               className="cursor-pointer text-[13px]"
               data-testid="user-nav-item-theme"

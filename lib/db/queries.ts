@@ -19,12 +19,15 @@ import postgres from "postgres";
 import type { ArtifactKind } from "@/components/chat/artifact";
 import type { VisibilityType } from "@/components/chat/visibility-selector";
 import { isAdminEmail, OWNER_EMAIL } from "../constants";
+import { decryptSecret, encryptSecret } from "../crypto/credentials";
 import { ChatbotError } from "../errors";
 import { generateUUID } from "../utils";
 import {
   type Chat,
   chat,
   type DBMessage,
+  type DevJob,
+  devJob,
   document,
   type FavoritePrompt,
   type Folder,
@@ -46,8 +49,10 @@ import {
   stream,
   suggestion,
   type User,
+  type UserCredential,
   usageEvent,
   user,
+  userCredential,
   vote,
 } from "./schema";
 
@@ -1864,7 +1869,7 @@ export async function deleteFavoritePrompt(id: string, userId: string) {
 
 // ─── RunPod settings (one row per account) ───────────────────────────────
 
-/** Server-only: includes the raw apiKey. Never return this to the browser. */
+/** Server-only: includes the raw (decrypted) apiKey. Never return this to the browser. */
 export async function getRunpodSetting(
   userId: string
 ): Promise<RunpodSetting | null> {
@@ -1873,7 +1878,10 @@ export async function getRunpodSetting(
       .select()
       .from(runpodSetting)
       .where(eq(runpodSetting.userId, userId));
-    return row ?? null;
+    if (!row) {
+      return null;
+    }
+    return { ...row, apiKey: row.apiKey ? decryptSecret(row.apiKey) : null };
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }
@@ -1887,21 +1895,146 @@ export async function upsertRunpodSetting(
   }
 ) {
   try {
+    const encryptedApiKey =
+      input.apiKey === undefined
+        ? undefined
+        : input.apiKey === null
+          ? null
+          : encryptSecret(input.apiKey);
     const set: Record<string, unknown> = { updatedAt: new Date() };
     if (input.podId !== undefined) {
       set.podId = input.podId;
     }
-    if (input.apiKey !== undefined) {
-      set.apiKey = input.apiKey;
+    if (encryptedApiKey !== undefined) {
+      set.apiKey = encryptedApiKey;
     }
     await db
       .insert(runpodSetting)
       .values({
-        apiKey: input.apiKey ?? null,
+        apiKey: encryptedApiKey ?? null,
         podId: input.podId ?? null,
         userId,
       })
       .onConflictDoUpdate({ set, target: runpodSetting.userId });
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+// ─── User credentials (BYOK — one row per account) ───────────────────────
+
+/** Server-only: values are decrypted. Never return this shape to the browser. */
+export async function getUserCredentials(
+  userId: string
+): Promise<UserCredential | null> {
+  try {
+    const [row] = await db
+      .select()
+      .from(userCredential)
+      .where(eq(userCredential.userId, userId));
+    if (!row) {
+      return null;
+    }
+    return {
+      ...row,
+      anthropicApiKey: row.anthropicApiKey
+        ? decryptSecret(row.anthropicApiKey)
+        : null,
+      githubPat: row.githubPat ? decryptSecret(row.githubPat) : null,
+      glmApiKey: row.glmApiKey ? decryptSecret(row.glmApiKey) : null,
+    };
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/** Booleans only — safe to return to the browser. */
+export async function getUserCredentialStatus(userId: string): Promise<{
+  hasAnthropic: boolean;
+  hasGlm: boolean;
+  hasGithubPat: boolean;
+}> {
+  try {
+    const [row] = await db
+      .select({
+        anthropicApiKey: userCredential.anthropicApiKey,
+        githubPat: userCredential.githubPat,
+        glmApiKey: userCredential.glmApiKey,
+      })
+      .from(userCredential)
+      .where(eq(userCredential.userId, userId));
+    return {
+      hasAnthropic: Boolean(row?.anthropicApiKey),
+      hasGithubPat: Boolean(row?.githubPat),
+      hasGlm: Boolean(row?.glmApiKey),
+    };
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function upsertUserCredential(
+  userId: string,
+  input: {
+    anthropicApiKey?: string | null;
+    glmApiKey?: string | null;
+    githubPat?: string | null;
+  }
+) {
+  try {
+    const encrypt = (v: string | null | undefined) =>
+      v === undefined ? undefined : v === null ? null : encryptSecret(v);
+    const anthropicApiKey = encrypt(input.anthropicApiKey);
+    const glmApiKey = encrypt(input.glmApiKey);
+    const githubPat = encrypt(input.githubPat);
+
+    const set: Record<string, unknown> = { updatedAt: new Date() };
+    if (anthropicApiKey !== undefined) {
+      set.anthropicApiKey = anthropicApiKey;
+    }
+    if (glmApiKey !== undefined) {
+      set.glmApiKey = glmApiKey;
+    }
+    if (githubPat !== undefined) {
+      set.githubPat = githubPat;
+    }
+
+    await db
+      .insert(userCredential)
+      .values({
+        anthropicApiKey: anthropicApiKey ?? null,
+        githubPat: githubPat ?? null,
+        glmApiKey: glmApiKey ?? null,
+        userId,
+      })
+      .onConflictDoUpdate({ set, target: userCredential.userId });
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+// ─── Dev-agent jobs ("개발 시작" runs on Vultr) ───────────────────────────
+
+export async function createDevJob({
+  id,
+  userId,
+  projectId,
+}: {
+  id: string;
+  userId: string;
+  projectId: string;
+}) {
+  try {
+    await db.insert(devJob).values({ id, projectId, userId });
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function getDevJob(id: string): Promise<DevJob | null> {
+  try {
+    const [row] = await db.select().from(devJob).where(eq(devJob.id, id));
+    return row ?? null;
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }

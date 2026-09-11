@@ -21,9 +21,9 @@ export async function GET() {
 }
 
 const bodySchema = z.object({
-  // Empty string clears the key; omit to leave it unchanged.
-  apiKey: z.string().max(400).optional(),
-  // Full proxy URL or bare id both accepted; parsed to the id.
+  // Full proxy URL or bare id both accepted; parsed to the id. The RunPod
+  // API key itself is set via PUT /api/settings/credentials now (BYOK) —
+  // this route only owns podId.
   podId: z.string().max(200).nullish(),
 });
 
@@ -40,7 +40,7 @@ export async function PUT(request: Request) {
     return Response.json({ error: "Bad request" }, { status: 400 });
   }
 
-  const patch: { podId?: string | null; apiKey?: string | null } = {};
+  const patch: { podId?: string | null } = {};
 
   if (body.podId !== undefined) {
     if (body.podId === null || body.podId.trim() === "") {
@@ -58,10 +58,6 @@ export async function PUT(request: Request) {
       }
       patch.podId = parsed;
     }
-  }
-
-  if (body.apiKey !== undefined) {
-    patch.apiKey = body.apiKey.trim() === "" ? null : body.apiKey.trim();
   }
 
   await upsertRunpodSetting(session.user.id, patch);

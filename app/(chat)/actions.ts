@@ -6,7 +6,7 @@ import { auth } from "@/app/(auth)/auth";
 import type { VisibilityType } from "@/components/chat/visibility-selector";
 import { titleModel } from "@/lib/ai/models";
 import { titlePrompt } from "@/lib/ai/prompts";
-import { getTitleModel } from "@/lib/ai/providers";
+import type { UserModels } from "@/lib/ai/providers";
 import { trackUsage } from "@/lib/ai/usage";
 import {
   deleteMessagesByChatIdAfterTimestamp,
@@ -25,20 +25,23 @@ export async function saveChatModelAsCookie(model: string) {
 
 export async function generateTitleFromUserMessage({
   message,
+  models,
+  userId,
 }: {
   message: UIMessage;
+  models: UserModels;
+  userId: string;
 }) {
   const { text, usage } = await generateText({
     instructions: titlePrompt,
-    model: getTitleModel(),
+    model: models.titleModel(),
     prompt: getTextFromMessage(message),
   });
 
-  const session = await auth();
   await trackUsage({
     modelId: titleModel.id,
     usage,
-    userId: session?.user?.id,
+    userId,
   });
 
   return text

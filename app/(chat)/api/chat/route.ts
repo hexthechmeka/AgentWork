@@ -29,12 +29,16 @@ import {
   systemPrompt,
   type UnifiedChatIdentity,
 } from "@/lib/ai/prompts";
-import { getLanguageModel } from "@/lib/ai/providers";
+import {
+  MissingCredentialError,
+  missingCredentialMessage,
+} from "@/lib/ai/providers";
 import { createDocument } from "@/lib/ai/tools/create-document";
 import { editDocument } from "@/lib/ai/tools/edit-document";
 import { requestSuggestions } from "@/lib/ai/tools/request-suggestions";
 import { updateDocument } from "@/lib/ai/tools/update-document";
 import { trackUsage } from "@/lib/ai/usage";
+import { resolveModelsForUser } from "@/lib/ai/user-models";
 import { isProductionEnvironment } from "@/lib/constants";
 import {
   createStreamId,
@@ -186,6 +190,21 @@ export async function POST(request: Request) {
       chatModel = GLM_VISION_MODEL_ID;
     }
 
+    const models = await resolveModelsForUser(session.user.id);
+    try {
+      // Fail fast, before spending any DB/stream setup, if the caller
+      // hasn't registered the key this model needs (BYOK).
+      models.languageModel(chatModel);
+    } catch (error) {
+      if (error instanceof MissingCredentialError) {
+        return Response.json(
+          { error: missingCredentialMessage(error) },
+          { status: 400 }
+        );
+      }
+      throw error;
+    }
+
     let usageProvider: "anthropic" | "glm" | "aichat" = "anthropic";
     if (chatModel.startsWith("glm/")) {
       usageProvider = "glm";
@@ -246,7 +265,11 @@ export async function POST(request: Request) {
         userId: session.user.id,
         visibility: selectedVisibilityType,
       });
-      titlePromise = generateTitleFromUserMessage({ message });
+      titlePromise = generateTitleFromUserMessage({
+        message,
+        models,
+        userId: session.user.id,
+      });
     }
 
     let uiMessages: ChatMessage[];
@@ -462,7 +485,7 @@ export async function POST(request: Request) {
             supportsTools,
           }),
           messages: modelMessages,
-          model: getLanguageModel(chatModel),
+          model: models.languageModel(chatModel),
           onAbort() {
             stopWaitingStatus();
           },
@@ -500,17 +523,20 @@ export async function POST(request: Request) {
             createDocument: createDocument({
               dataStream,
               modelId: chatModel,
+              models,
               session,
             }),
             editDocument: editDocument({ dataStream, session }),
             requestSuggestions: requestSuggestions({
               dataStream,
               modelId: chatModel,
+              models,
               session,
             }),
             updateDocument: updateDocument({
               dataStream,
               modelId: chatModel,
+              models,
               session,
             }),
           },
@@ -585,7 +611,7 @@ export async function POST(request: Request) {
 
                 const { text: summary } = await generateText({
                   maxOutputTokens: 400,
-                  model: getLanguageModel(chatModel),
+                  model: models.languageModel(chatModel),
                   prompt: buildRoleplaySummaryPrompt(
                     lines.join("\n"),
                     chat.rollingSummary
@@ -663,6 +689,9 @@ export async function POST(request: Request) {
       },
       onError: (error) => {
         console.error("Chat UI message stream error:", chatModel, error);
+        if (error instanceof MissingCredentialError) {
+          return missingCredentialMessage(error);
+        }
         if (
           error instanceof Error &&
           error.message?.includes(
